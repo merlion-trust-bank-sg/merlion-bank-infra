@@ -17,7 +17,7 @@ Region: **`us-east-1`** (2 AZs: `us-east-1a`, `us-east-1b`) · Accounts: **dev /
 | Solutions Architect | **SA** – _name_ | Requirements, architecture diagram, service selection, constraint mapping, cost, ADRs, audit controls | `merlion-bank-infra` (docs + audit) |
 | DevSecOps Engineer 1 | **DO1** – _name_ | Terraform foundations: state, OIDC roles, VPC, EKS; Helm chart & secrets wiring | `merlion-bank-infra` |
 | DevSecOps Engineer 2 | **DO2** – _name_ | RDS, ECR, KMS, Secrets Manager, cluster add-ons, both CI/CD pipelines, security gates | `merlion-bank-app` |
-| Site Reliability Engineer | **SRE** – _name_ | CloudWatch logs/metrics, Container Insights, dashboard, SLO alarms, SNS alerting, runbook, cost | Both |
+| Site Reliability Engineer | **SRE** – _name_ | Self-hosted Prometheus, Loki, Grafana, Alertmanager; dashboards, SLO rules, alert routing, runbook, cost | Both |
 
 > README note (required by brief): *"As a 4-person team we doubled up on **DevSecOps**, the heaviest phase for Merlion Trust because auditability and credential separation are hard constraints. DO1 owns the infrastructure foundations, DO2 owns data services and the delivery pipelines."*
 
@@ -36,7 +36,7 @@ Region: **`us-east-1`** (2 AZs: `us-east-1a`, `us-east-1b`) · Accounts: **dev /
 | Workload | 6 Bank of Anthos services built into our own images: `frontend` (2+ replicas), `userservice` (signs JWTs), `contacts`, `ledgerwriter`, `balancereader`, `transactionhistory` |
 | Data | RDS PostgreSQL `accounts-db` and `ledger-db`: Multi-AZ, KMS-encrypted, automated backups, SQL over TLS |
 | Platform services | ECR (immutable tags, scan on push) · Secrets Manager (DB creds, JWT key pair → pods via External Secrets/IRSA) · KMS CMKs (RDS, S3, logs, secrets) · Terraform state in S3 (versioned, encrypted) |
-| Observability | CloudWatch in-region, no third-party SaaS: Fluent Bit → CloudWatch Logs (365-day retention) · Container Insights (CPU/memory, pods, ALB requests, 5xx, latency) · Dashboard · SLO alarms → SNS → email / Telegram |
+| Observability | **Self-hosted on EKS** in `us-east-1`, no third-party SaaS (namespace `monitoring`, `kube-prometheus-stack` + Loki Helm charts): **Loki + Promtail** (logs from all pods, chunks in S3 `us-east-1` + KMS, 365-day retention) · **Prometheus** (node, pod, app metrics on EBS; ALB metrics via **YACE** CloudWatch exporter) · **Grafana** (health, SLOs, logs for non-team viewers) · **Alertmanager** (SLO rules → email / Telegram) |
 | Audit | CloudTrail in all 3 accounts → **S3 Object Lock, compliance mode, 1-year retention**. Also stores EKS audit logs and pipeline deploy records (who, what, when) |
 
 ---
@@ -63,8 +63,10 @@ merlion-bank-infra/
 │   ├── secrets/                   # Secrets Manager entries (DB creds, JWT key pair)
 │   ├── iam-ci/                    # gha-dev, gha-staging, gha-prod OIDC roles
 │   ├── audit/                     # CloudTrail + Object Lock bucket
-│   ├── addons/                    # LB Controller, External Secrets, Fluent Bit, CloudWatch agent
-│   └── observability/             # log groups, dashboard, SLO alarms, SNS
+│   ├── addons/                    # LB Controller, External Secrets
+│   └── observability/             # Loki S3 bucket + IRSA, Helm releases (kube-prometheus-stack,
+│                                  #   Loki, Promtail, YACE), Grafana dashboards JSON,
+│                                  #   PrometheusRules (SLOs), Alertmanager routes
 ├── envs/
 │   ├── dev/                       # root module, dev account
 │   ├── staging/                   # root module, staging account
@@ -100,7 +102,7 @@ merlion-bank-app/
 ├── ops/
 │   ├── slo/slo.md                 # SLIs, SLO targets, error budget
 │   ├── runbooks/                  # incident runbook(s)
-│   ├── queries/                   # saved CloudWatch Logs Insights queries
+│   ├── queries/                   # saved LogQL / PromQL queries
 │   └── demo/                      # failing-gate PR + alert trigger scripts
 ├── security/.trivyignore          # justified exceptions only, each with expiry
 └── README.md                      # pipeline doc: SCRUM branch -> PR -> dev -> staging -> prod
@@ -146,9 +148,9 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 | INF-12 | Env roots `envs/dev`, `envs/staging`, `envs/prod` wiring all modules. Separate state per account; dev smallest sizes, staging prod-like | DO1 | `SCRUM-<n>-env-roots` | `envs/` | INF-04…10 | DO2 |
 | INF-13 | Infra pipeline. **PR:** fmt / validate / tflint / **checkov (fail on HIGH)** / `plan` per env posted as PR comment. **main:** apply dev (`gha-dev`) → staging (`gha-staging`) → **manual approval** → prod (`gha-prod`) | DO2 | `SCRUM-<n>-tf-pipeline` | `.github/workflows/tf-*.yml` | INF-03, INF-12 | DO1 |
 | INF-14 | Cluster add-ons part 1: **AWS Load Balancer Controller** (IRSA), **ACM certificate** for the ALB, **External Secrets Operator** (IRSA → Secrets Manager) | DO2 | `SCRUM-<n>-addons-lb-eso` | `modules/addons/` | INF-06, INF-09 | SRE |
-| INF-15 | Cluster add-ons part 2: **Fluent Bit** → CloudWatch Logs, **CloudWatch agent / Container Insights**. Log groups per env with **365-day retention** and KMS | SRE | `SCRUM-<n>-addons-observability` | `modules/addons/`, `modules/observability/` | INF-06, INF-04 | DO2 |
-| INF-16 | Alert delivery: SNS topic (KMS) → email subscription + Telegram (small Lambda forwarder, bot token in Secrets Manager) | SRE | `SCRUM-<n>-sns-alerting` | `modules/observability/` | INF-15 | DO2 |
-| INF-17 | CloudWatch **dashboard** ("is the system healthy right now?"): SLO status, ALB requests / 5xx / p95, pod CPU and memory, Logs Insights panel. **SLO alarms** (availability, p95) → SNS | SRE | `SCRUM-<n>-dashboard-alarms` | `modules/observability/` | INF-15, INF-16, APP-13 | SA |
+| INF-15 | Monitoring stack in namespace `monitoring` via Helm (Terraform `helm_release`, pinned chart versions): **kube-prometheus-stack** (Prometheus on EBS PV, node-exporter, kube-state-metrics, Grafana, Alertmanager), **Loki** with chunks in an **S3 bucket in `us-east-1`** (KMS, IRSA, compactor retention **365 days**), **Promtail** DaemonSet (or Grafana Alloy, Promtail's successor), **YACE** exporter (IRSA, read-only CloudWatch) for ALB 5xx / `TargetResponseTime`. Grafana exposed via ALB ingress with login, admin password from Secrets Manager | SRE | `SCRUM-<n>-monitoring-stack` | `modules/observability/` | INF-06, INF-04, INF-14 | DO2 |
+| INF-16 | Alert routing: **Alertmanager** receivers for **email** (SMTP) and **Telegram** (native `telegram_configs`). Bot token + SMTP creds via External Secrets, never in values files. Alert templates carry metric names and thresholds only, **no customer data**. Include a `Watchdog` / dead-man's-switch alert so a down Prometheus is noticed | SRE | `SCRUM-<n>-alertmanager-routing` | `modules/observability/` | INF-15 | DO2 |
+| INF-17 | **Grafana dashboard** ("is the system healthy right now?"): SLO status + error budget, ALB requests / 5xx / p95, pod and node CPU and memory, Loki log panel per service. Provisioned as JSON (dashboards-as-code). **PrometheusRules** for SLOs: availability burn rate, p95 > 500 ms, plus pod CrashLoop / DB unreachable | SRE | `SCRUM-<n>-grafana-slo-rules` | `modules/observability/` | INF-15, INF-16, APP-13 | SA |
 | INF-18 | Cost controls: tagging standard, AWS Budgets alert per account, **dev scale-to-0 overnight** (scheduled node group scaling), teardown workflow | SRE | `SCRUM-<n>-cost-controls` | `envs/dev/`, `.github/workflows/teardown.yml` | INF-12 | SA |
 
 ### 5.2 Docs and ADRs (`merlion-bank-infra/docs`)
@@ -157,12 +159,12 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 |---|---|---|---|---|
 | DOC-01 | Business requirements summary: functional, non-functional, constraints, assumptions (including the region directive) | SA | `SCRUM-<n>-requirements` | SRE |
 | DOC-02 | Architecture diagram: update the region label to `us-east-1` and keep it matching what's deployed | SA | `SCRUM-<n>-architecture-diagram` | DO1 |
-| DOC-03 | Service selection: chosen vs alternative vs why (EKS, RDS, GitHub Actions, CloudWatch, Secrets Manager) | SA | `SCRUM-<n>-service-selection` | DO2 |
+| DOC-03 | Service selection: chosen vs alternative vs why (EKS, RDS, GitHub Actions, Prometheus/Loki/Grafana, Secrets Manager) | SA | `SCRUM-<n>-service-selection` | DO2 |
 | DOC-04 | Constraint compliance mapping: constraint → decision → evidence (see [section 8](#8-hard-constraint-traceability)) | SA | `SCRUM-<n>-compliance-map` | SRE |
-| DOC-05 | Monthly prod cost estimate with `us-east-1` pricing (EKS, nodes, 2× Multi-AZ RDS, NAT, ALB, CloudWatch, CloudTrail, S3) plus dev/staging run cost | SA | `SCRUM-<n>-cost-estimate` | SRE |
+| DOC-05 | Monthly prod cost estimate with `us-east-1` pricing (EKS, nodes incl. monitoring stack, 2× Multi-AZ RDS, NAT, ALB, EBS for Prometheus, S3 for Loki + audit, CloudTrail, YACE CloudWatch API calls) plus dev/staging run cost | SA | `SCRUM-<n>-cost-estimate` | SRE |
 | DOC-06 | ADR-001 Runtime: EKS vs ECS | SA | `SCRUM-<n>-adr-001-runtime` | DO1 |
 | DOC-07 | ADR-002 Multi-account dev/staging/prod vs single account | DO1 | `SCRUM-<n>-adr-002-accounts` | SA |
-| DOC-08 | ADR-003 Observability: CloudWatch (in-region, no SaaS) vs self-hosted Prometheus/Loki | SRE | `SCRUM-<n>-adr-003-observability` | SA |
+| DOC-08 | ADR-003 Observability: **self-hosted Prometheus + Loki + Grafana + Alertmanager on EKS** (chosen) vs CloudWatch (alternative) vs Grafana Cloud (rejected: SaaS, data outside our region). Consequences: data stays in `us-east-1`, open-source skills from the labs, no per-GB ingest fees; but we operate it ourselves (single replicas, so a Watchdog alert is needed), and ALB metrics still come from CloudWatch via YACE | SRE | `SCRUM-<n>-adr-003-observability` | SA |
 | DOC-09 | ADR-004 Audit log immutability: S3 Object Lock compliance mode, 1 year | SA | `SCRUM-<n>-adr-004-audit` | DO1 |
 | DOC-10 | ADR-005 Credentials: GitHub OIDC per environment, no static keys | DO1 | `SCRUM-<n>-adr-005-oidc` | DO2 |
 | DOC-11 | ADR-006 Region: `us-east-1` per instructor directive (deviation from the brief, approval recorded, region parameterised) | SA | `SCRUM-<n>-adr-006-region` | SRE |
@@ -184,9 +186,9 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 | APP-10 | CD pipeline: merge to `main` → build + gates → push → **dev** (`gha-dev`) auto → smoke tests → **staging** (`gha-staging`) auto, same digest → **manual approval** → **prod** (`gha-prod`) | DO2 | `SCRUM-<n>-cd-pipeline` | `cd.yml` | APP-05, APP-09, INF-03 | DO1 |
 | APP-11 | Deploy audit record: on every prod deploy, the pipeline writes `{actor, approver, PR, commit SHA, image digest, env, timestamp}` to the Object Lock bucket | SA | `SCRUM-<n>-deploy-audit` | `cd.yml` | APP-10, INF-10 | DO2 |
 | APP-12 | Pipeline README: SCRUM branch → PR → dev → staging → prod; approvals; **what happens when a security gate fails**; CI-log hygiene note | DO2 | `SCRUM-<n>-pipeline-readme` | `README.md` | APP-10 | SA |
-| APP-13 | Logging check: all 6 services log to stdout, visible in CloudWatch Logs per service. Save Logs Insights queries (errors per service, failed logins, ledger write failures) | SRE | `SCRUM-<n>-log-queries` | `ops/queries/` | APP-10, INF-15 | DO1 |
+| APP-13 | Logging check: all 6 services log to stdout, visible in Loki per service (`{namespace="bank", app="<service>"}`). Save LogQL queries (errors per service, failed logins, ledger write failures) | SRE | `SCRUM-<n>-log-queries` | `ops/queries/` | APP-10, INF-15 | DO1 |
 | APP-14 | SLIs and SLOs: **availability** = 1 − ALB 5xx ratio (target 99.9%); **p95 latency** = ALB `TargetResponseTime` p95 (target < 500 ms). Justification + error budget | SRE | `SCRUM-<n>-slo` | `ops/slo/slo.md` | APP-13 | SA |
-| APP-15 | Incident runbook, e.g. "ledger-db failover / connection errors": detection (alarm), diagnosis (dashboard, Logs Insights, RDS events), mitigation, escalation | SRE | `SCRUM-<n>-runbook` | `ops/runbooks/` | INF-17 | DO1 |
+| APP-15 | Incident runbook, e.g. "ledger-db failover / connection errors": detection (Alertmanager alert), diagnosis (Grafana dashboard, LogQL in Loki, RDS events), mitigation, escalation | SRE | `SCRUM-<n>-runbook` | `ops/runbooks/` | INF-17 | DO1 |
 | APP-16 | Demo prep: failing-gate PR (vulnerable base image), alert trigger (scale `frontend` to 0 or break a DB secret in staging), audit trail walkthrough for the last prod deploy | SRE + DO2 | `SCRUM-<n>-demo-scripts` | `ops/demo/` | APP-05, INF-17, APP-11 | SA |
 
 ---
@@ -223,7 +225,7 @@ Each member also **reviews** roughly 10–12 PRs, so the review history shows cr
 
 | Constraint | Check-in that satisfies it | Evidence to show |
 |---|---|---|
-| **Data residency** (one approved region: `us-east-1` per instructor) | INF-05/07 (VPC, RDS, backups in-region, no cross-region copy), INF-11 (region pin + deny), INF-15 (CloudWatch Logs in-region, no SaaS), CI-log hygiene rule | `terraform state show` region, RDS backup config, log group ARNs, ADR-003, ADR-006 |
+| **Data residency** (one approved region: `us-east-1` per instructor) | INF-05/07 (VPC, RDS, backups in-region, no cross-region copy), INF-11 (region pin + deny), INF-15 (self-hosted Loki/Prometheus, Loki chunks in S3 `us-east-1`, no SaaS), CI-log hygiene rule | `terraform state show` region, RDS backup config, Loki bucket region, ADR-003, ADR-006 |
 | **Auditability** (every prod change traceable) | Branch protection + SCRUM links (INF-01/APP-01), plan on PR (INF-13), prod approval (APP-10), deploy record (APP-11), CloudTrail incl. OIDC role sessions (INF-10) | Jira ticket → PR → reviewer → Actions run → approver → deploy record → CloudTrail `AssumeRoleWithWebIdentity` event |
 | **Audit log retention 1 yr, tamper-proof** | INF-10 Object Lock **compliance mode** 365 days, delete denied to engineering roles | Bucket Object Lock config, a failed `DeleteObject` attempt, ADR-004 |
 | No console changes to prod | INF-03 (`gha-prod` only from `production` environment), INF-11 (console-write alarm) | IAM trust policy, CloudTrail query |
