@@ -111,7 +111,7 @@ Do these tasks roughly in order: each one's dependencies are listed in "Depends 
 | INF-01 | Create repo, branch protection, CODEOWNERS, PR template, `.gitignore`, gitleaks pre-commit, README skeleton | DO1 | `feature/inf-01-repo-setup` | `.github/*`, `README.md` | – | SA |
 | INF-02 | Bootstrap: S3 state bucket (versioned, KMS, `ap-southeast-1`), DynamoDB lock table, GitHub OIDC provider | DO1 | `feature/inf-02-bootstrap` | `bootstrap/` | INF-01 | SRE |
 | INF-03 | Per-env CI roles: `gh-infra-staging`, `gh-infra-prod`, `gh-app-staging`, `gh-app-prod`. Trust policy pinned to repo + environment; staging policies deny prod ARNs/tags | DO1 | `feature/inf-03-oidc-roles` | `modules/iam-ci/` | INF-02 | SA |
-| INF-04 | Network module: VPC, 3 AZ private/public subnets, NAT, VPC endpoints (ECR, S3, Secrets Manager, Logs) | DO1 | `feature/inf-04-network` | `modules/network/` | INF-02 | SA |
+| INF-04 | Network module: VPC, 2 AZ private/public subnets (`ap-southeast-1a`, `ap-southeast-1b`; minimum for EKS and RDS Multi-AZ), NAT, VPC endpoints (ECR, S3, Secrets Manager, Logs) | DO1 | `feature/inf-04-network` | `modules/network/` | INF-02 | SA |
 | INF-05 | EKS module: cluster (private endpoint + restricted public), managed node group, IRSA, control-plane logging on | DO1 | `feature/inf-05-eks` | `modules/eks/` | INF-04 | SRE |
 | INF-06 | RDS module: PostgreSQL for `accounts-db` and `ledger-db`, private subnets only, KMS encryption, automated backups in-region, **no cross-region snapshot copy** | DO2 | `feature/inf-06-rds` | `modules/rds/` | INF-04 | DO1 |
 | INF-07 | ECR module: one repo per service, scan-on-push, immutable tags, lifecycle policy | DO2 | `feature/inf-07-ecr` | `modules/ecr/` | INF-02 | DO1 |
