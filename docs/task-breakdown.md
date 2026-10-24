@@ -1,6 +1,12 @@
 # Merlion Trust Bank – Code Check-in Task Breakdown
 
-Capstone: Cloud Infrastructure Engineering · Use Case A (Merlion Trust Bank) · Reference app: Google Bank of Anthos · Region: `ap-southeast-1` only
+Capstone: Cloud Infrastructure Engineering · Use Case A (Merlion Trust Bank) · Reference app: Google Bank of Anthos
+Region: **`us-east-1`** (2 AZs: `us-east-1a`, `us-east-1b`) · Accounts: **dev / staging / prod** · Work tracking: **Jira SCRUM board**
+
+> **Region note.** The brief's data-residency constraint names `ap-southeast-1`. Our instructor has directed us to deploy in **`us-east-1`**, so we treat the constraint as *"all customer data, backups and logs stay in one approved region"*.
+> - Region is a single Terraform variable (`var.region`). Moving to Singapore is a variable change plus a redeploy.
+> - This deviation is recorded in **ADR-006** together with the instructor's approval.
+> - In the architecture diagram, rename the red boundary label from "ap-southeast-1 (Singapore)" to **"us-east-1"** (DOC-02).
 
 ---
 
@@ -8,175 +14,193 @@ Capstone: Cloud Infrastructure Engineering · Use Case A (Merlion Trust Bank) ·
 
 | Role | Member | Primary ownership | Main repo |
 |---|---|---|---|
-| Solutions Architect | **SA** – _name_ | Requirements, architecture diagram, service selection, constraint mapping, cost, ADRs, audit/compliance controls | `merlion-infra` (docs + audit) |
-| DevSecOps Engineer 1 | **DO1** – _name_ | Terraform: state, network, EKS, RDS, ECR, IAM/OIDC, infra pipeline | `merlion-infra` |
-| DevSecOps Engineer 2 | **DO2** – _name_ | Container builds, Helm chart, app CI/CD, security gates, secrets delivery | `merlion-app` |
-| Site Reliability Engineer | **SRE** – _name_ | Logging, metrics, dashboards, SLOs, alerts, runbook, cost teardown | Both |
+| Solutions Architect | **SA** – _name_ | Requirements, architecture diagram, service selection, constraint mapping, cost, ADRs, audit controls | `merlion-bank-infra` (docs + audit) |
+| DevSecOps Engineer 1 | **DO1** – _name_ | Terraform foundations: state, OIDC roles, VPC, EKS; Helm chart & secrets wiring | `merlion-bank-infra` |
+| DevSecOps Engineer 2 | **DO2** – _name_ | RDS, ECR, KMS, Secrets Manager, cluster add-ons, both CI/CD pipelines, security gates | `merlion-bank-app` |
+| Site Reliability Engineer | **SRE** – _name_ | CloudWatch logs/metrics, Container Insights, dashboard, SLO alarms, SNS alerting, runbook, cost | Both |
 
-> README note (required by brief): *"As a 4-person team we doubled up on **DevSecOps** — the heaviest phase for Merlion Trust because auditability and credential separation are hard constraints. DO1 owns the infrastructure pipeline, DO2 owns the application pipeline."*
+> README note (required by brief): *"As a 4-person team we doubled up on **DevSecOps**, the heaviest phase for Merlion Trust because auditability and credential separation are hard constraints. DO1 owns the infrastructure foundations, DO2 owns data services and the delivery pipelines."*
 
-**Everyone commits to both repos.** The brief says that a history where one person authored everything will be questioned. See the contribution matrix in [section 7](#7-contribution-matrix).
+**Everyone commits to both repos.** See the contribution matrix in [section 7](#7-contribution-matrix).
 
 ---
 
-## 2. Repositories
+## 2. Target architecture (summary of the diagram)
 
-### 2.1 `merlion-infra` – infrastructure as code + architecture docs
+| Layer | What we build |
+|---|---|
+| Delivery (outside AWS) | GitHub org `merlion-trust-bank-sg` · branches `SCRUM-<n>-*` · PR to `main` with 1 review · Actions: build → SCA → image scan · dev auto → staging auto after tests → **production manual approval** · Terraform plan shown on PR |
+| Identity | GitHub OIDC → AWS STS. `gha-dev` / `gha-staging` can only touch their own account. `gha-prod` reaches the prod account only from the `production` environment, after approval. No stored keys |
+| Accounts | **Dev** (EKS + RDS single-AZ, smallest sizes, auto-deploy on merge, scale to 0 overnight) · **Staging** (prod-like sizing, same Terraform modules, same image promoted, loadgenerator) · **Prod** |
+| Network (prod) | VPC across 2 AZs. **Public subnets:** ALB (AWS Load Balancer Controller + ACM cert), NAT gateway. **Private subnets:** EKS. **Isolated DB subnets:** no internet route |
+| Workload | 6 Bank of Anthos services built into our own images: `frontend` (2+ replicas), `userservice` (signs JWTs), `contacts`, `ledgerwriter`, `balancereader`, `transactionhistory` |
+| Data | RDS PostgreSQL `accounts-db` and `ledger-db`: Multi-AZ, KMS-encrypted, automated backups, SQL over TLS |
+| Platform services | ECR (immutable tags, scan on push) · Secrets Manager (DB creds, JWT key pair → pods via External Secrets/IRSA) · KMS CMKs (RDS, S3, logs, secrets) · Terraform state in S3 (versioned, encrypted) |
+| Observability | CloudWatch in-region, no third-party SaaS: Fluent Bit → CloudWatch Logs (365-day retention) · Container Insights (CPU/memory, pods, ALB requests, 5xx, latency) · Dashboard · SLO alarms → SNS → email / Telegram |
+| Audit | CloudTrail in all 3 accounts → **S3 Object Lock, compliance mode, 1-year retention**. Also stores EKS audit logs and pipeline deploy records (who, what, when) |
+
+---
+
+## 3. Repositories
+
+### 3.1 `merlion-bank-infra` – Terraform + architecture docs
 
 ```
-merlion-infra/
+merlion-bank-infra/
 ├── .github/
 │   ├── workflows/
-│   │   ├── tf-plan.yml            # PR: fmt, validate, checkov, plan -> PR comment
-│   │   └── tf-apply.yml           # main: apply staging -> approval -> apply prod
+│   │   ├── tf-plan.yml            # PR: fmt, validate, tflint, checkov, plan per env -> PR comment
+│   │   └── tf-apply.yml           # main: apply dev -> staging -> (approval) -> prod
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
-├── bootstrap/                     # one-off: S3 state bucket, DynamoDB lock, GitHub OIDC provider
+├── bootstrap/                     # per account: state bucket, lock, GitHub OIDC provider
 ├── modules/
-│   ├── network/                   # VPC, private subnets, NAT, VPC endpoints
-│   ├── eks/                       # cluster, node groups, IRSA
-│   ├── rds/                       # PostgreSQL (accounts-db, ledger-db), KMS, backups
-│   ├── ecr/                       # repos + scan-on-push + immutable tags
-│   ├── iam-ci/                    # per-env GitHub OIDC roles (staging cannot touch prod)
-│   ├── audit/                     # CloudTrail + S3 Object Lock (1 yr, compliance mode)
-│   └── observability/             # Loki S3 bucket, IRSA roles, retention
+│   ├── kms/                       # CMKs: rds, s3, logs, secrets
+│   ├── network/                   # VPC, 2 AZ public / private / isolated-db subnets, NAT, endpoints
+│   ├── eks/                       # cluster, managed node group, IRSA, control-plane + audit logs
+│   ├── rds/                       # accounts-db, ledger-db
+│   ├── ecr/                       # one repo per service
+│   ├── secrets/                   # Secrets Manager entries (DB creds, JWT key pair)
+│   ├── iam-ci/                    # gha-dev, gha-staging, gha-prod OIDC roles
+│   ├── audit/                     # CloudTrail + Object Lock bucket
+│   ├── addons/                    # LB Controller, External Secrets, Fluent Bit, CloudWatch agent
+│   └── observability/             # log groups, dashboard, SLO alarms, SNS
 ├── envs/
-│   ├── staging/                   # root module, own state key
-│   └── prod/                      # root module, own state key
-├── platform/                      # cluster add-ons via helm_release
-│   ├── ingress-nginx/
-│   ├── external-secrets/
-│   └── monitoring/                # kube-prometheus-stack, Loki, Promtail/Alloy values
+│   ├── dev/                       # root module, dev account
+│   ├── staging/                   # root module, staging account
+│   └── prod/                      # root module, prod account
 ├── docs/
-│   ├── architecture/              # diagram (.drawio + .png)
-│   ├── adr/                       # ADR-001 ... ADR-00n
+│   ├── architecture/              # diagram source + PNG
+│   ├── adr/
 │   ├── requirements.md
 │   ├── service-selection.md
 │   ├── constraint-compliance.md
-│   └── cost-estimate.md
+│   ├── cost-estimate.md
+│   └── task-breakdown.md          # this file
 └── README.md
 ```
 
-### 2.2 `merlion-app` – application, deployment, operations
+### 3.2 `merlion-bank-app` – application, deployment, operations
 
 ```
-merlion-app/
+merlion-bank-app/
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml                 # PR: SCA scan, build, image scan (fail on HIGH/CRITICAL)
-│   │   └── cd.yml                 # main: push ECR -> deploy staging -> approval -> deploy prod
+│   │   ├── ci.yml                 # PR: SCA, build, image scan (fail on HIGH/CRITICAL), gitleaks
+│   │   └── cd.yml                 # main: push ECR -> dev -> tests -> staging -> approval -> prod
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
-├── src/                           # Bank of Anthos upstream source (vendored, pinned tag)
-├── docker/                        # team-owned Dockerfiles / build overrides if needed
+├── src/                           # Bank of Anthos upstream source, pinned release tag
 ├── deploy/
 │   └── helm/bank-of-anthos/       # OUR chart (upstream manifests = reference only)
 │       ├── templates/
+│       ├── values-dev.yaml
 │       ├── values-staging.yaml
 │       └── values-prod.yaml
 ├── ops/
-│   ├── dashboards/                # Grafana JSON
-│   ├── alerts/                    # PrometheusRule YAML
 │   ├── slo/slo.md                 # SLIs, SLO targets, error budget
-│   └── runbooks/                  # incident runbook(s)
-├── security/
-│   └── .trivyignore               # justified exceptions only, each with expiry
-└── README.md                      # pipeline doc: feature -> PR -> staging -> prod, failed gate handling
+│   ├── runbooks/                  # incident runbook(s)
+│   ├── queries/                   # saved CloudWatch Logs Insights queries
+│   └── demo/                      # failing-gate PR + alert trigger scripts
+├── security/.trivyignore          # justified exceptions only, each with expiry
+└── README.md                      # pipeline doc: SCRUM branch -> PR -> dev -> staging -> prod
 ```
 
 ---
 
-## 3. Check-in rules (apply to both repos)
+## 4. Check-in rules (apply to both repos)
 
 | Rule | Setting |
 |---|---|
-| Branching model | Trunk-based: `main` is protected; short-lived `feature/<id>-<desc>`, `fix/<id>-<desc>`, `docs/<id>-<desc>` |
-| Branch protection on `main` | No direct pushes (including admins), PR required, **≥1 approving review**, required status checks pass, conversation resolved, linear history |
-| CODEOWNERS | `/modules/**` → DO1 · `/platform/monitoring/**`, `/ops/**` → SRE · `/docs/**` → SA · `/.github/**`, `/deploy/**` → DO2 |
-| Reviewer | **Never the author.** Reviewer comes from a different role where possible (see "Reviewer" columns) |
-| Commit messages | Conventional commits: `feat(eks): add managed node group` · `fix(ci): fail on HIGH vulns` · `docs(adr): ADR-003 runtime` |
-| PR template | What changed · Why · Linked task ID · `terraform plan` / test evidence · Constraint impact (residency / audit / retention) |
-| Merging | Merge commits or squash with the PR number in the title, so every prod change traces to PR → reviewer → pipeline run (**auditability constraint**) |
-| Never commit | Secrets, `.tfvars` with secrets, kubeconfigs, `.terraform/`, state files. Add `gitleaks` pre-commit hook + CI check |
-| Prod environment | GitHub Environment `production` with required reviewers. Only the pipeline deploys to prod |
+| Branch naming | `SCRUM-<n>-<short-desc>`, where `<n>` is the Jira issue number. This links commits and PRs to the Jira SCRUM board automatically. Example: `SCRUM-12-network-module` |
+| Branch protection on `main` | No direct pushes (including admins), PR required, **≥1 approving review**, required status checks pass, conversation resolved |
+| CODEOWNERS | `/modules/{network,eks,iam-ci}/**` → DO1 · `/modules/{rds,ecr,kms,secrets,addons}/**`, `/.github/**` → DO2 · `/modules/observability/**`, `/ops/**` → SRE · `/docs/**`, `/modules/audit/**` → SA |
+| Reviewer | **Never the author**, and preferably from a different role (see "Reviewer" columns) |
+| Commit messages | `SCRUM-<n>: <type>(<scope>): <summary>`. Example: `SCRUM-12: feat(network): add isolated DB subnets` |
+| PR template | What changed · Why · Jira link · `terraform plan` / test evidence · Constraint impact (region / audit / retention / credentials) |
+| GitHub Environments | `dev` (no gate) · `staging` (no gate, runs after dev tests) · `production` (**required reviewers**, only `main`) |
+| Never commit | Secrets, kubeconfigs, `.terraform/`, state files, `*.tfvars` with secrets. gitleaks runs as a pre-commit hook and in CI |
+| CI output hygiene | CI run logs are stored by GitHub, outside our AWS region. **No customer data and no app logs in CI output.** Smoke tests assert on status codes only |
 
 ---
 
-## 4. `merlion-infra` – task breakdown
+## 5. Task breakdown
 
-Do these tasks roughly in order: each one's dependencies are listed in "Depends on".
+Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
+
+### 5.1 `merlion-bank-infra`
 
 | ID | Task | Owner | Branch | Key files | Depends on | Reviewer |
 |---|---|---|---|---|---|---|
-| INF-01 | Create repo, branch protection, CODEOWNERS, PR template, `.gitignore`, gitleaks pre-commit, README skeleton | DO1 | `feature/inf-01-repo-setup` | `.github/*`, `README.md` | – | SA |
-| INF-02 | Bootstrap: S3 state bucket (versioned, KMS, `ap-southeast-1`), DynamoDB lock table, GitHub OIDC provider | DO1 | `feature/inf-02-bootstrap` | `bootstrap/` | INF-01 | SRE |
-| INF-03 | Per-env CI roles: `gh-infra-staging`, `gh-infra-prod`, `gh-app-staging`, `gh-app-prod`. Trust policy pinned to repo + environment; staging policies deny prod ARNs/tags | DO1 | `feature/inf-03-oidc-roles` | `modules/iam-ci/` | INF-02 | SA |
-| INF-04 | Network module: VPC, 2 AZ private/public subnets (`ap-southeast-1a`, `ap-southeast-1b`; minimum for EKS and RDS Multi-AZ), NAT, VPC endpoints (ECR, S3, Secrets Manager, Logs) | DO1 | `feature/inf-04-network` | `modules/network/` | INF-02 | SA |
-| INF-05 | EKS module: cluster (private endpoint + restricted public), managed node group, IRSA, control-plane logging on | DO1 | `feature/inf-05-eks` | `modules/eks/` | INF-04 | SRE |
-| INF-06 | RDS module: PostgreSQL for `accounts-db` and `ledger-db`, private subnets only, KMS encryption, automated backups in-region, **no cross-region snapshot copy** | DO2 | `feature/inf-06-rds` | `modules/rds/` | INF-04 | DO1 |
-| INF-07 | ECR module: one repo per service, scan-on-push, immutable tags, lifecycle policy | DO2 | `feature/inf-07-ecr` | `modules/ecr/` | INF-02 | DO1 |
-| INF-08 | Audit module: org/account CloudTrail → S3 with **Object Lock compliance mode 365 days**, bucket policy denying delete to engineering roles, CloudTrail log file validation | SA | `feature/inf-08-audit-trail` | `modules/audit/` | INF-02 | DO1 |
-| INF-09 | Region guardrail: provider `region = "ap-southeast-1"` pinned, plus deny-other-regions IAM/SCP policy for app data services | SA | `feature/inf-09-region-guardrail` | `modules/iam-ci/`, `envs/*/providers.tf` | INF-03 | DO1 |
-| INF-10 | Env root modules `envs/staging` and `envs/prod` wiring all modules, separate state keys, smaller sizing for staging | DO1 | `feature/inf-10-env-roots` | `envs/` | INF-04…08 | DO2 |
-| INF-11 | Infra pipeline: PR → `fmt`/`validate`/`tflint`/**checkov (fail on HIGH)** → `plan` posted as PR comment; `main` → apply staging → **approval** → apply prod | DO2 | `feature/inf-11-tf-pipeline` | `.github/workflows/tf-*.yml` | INF-03, INF-10 | DO1 |
-| INF-12 | Self-hosted GitHub runners in `ap-southeast-1` (EC2 or actions-runner-controller on EKS) so build/deploy logs and artifacts stay in Singapore; archive run logs to the Object Lock bucket | DO2 | `feature/inf-12-sg-runners` | `modules/ci-runners/` or `platform/arc/` | INF-05, INF-08 | SA |
-| INF-13 | Platform add-ons: ingress-nginx, external-dns, External Secrets Operator (IRSA → Secrets Manager) | DO2 | `feature/inf-13-platform-addons` | `platform/` | INF-05 | SRE |
-| INF-14 | Observability infra: Loki S3 bucket (`ap-southeast-1`, KMS, lifecycle = retention period), IRSA roles for Loki/Prometheus | SRE | `feature/inf-14-obs-storage` | `modules/observability/` | INF-05 | DO1 |
-| INF-15 | Monitoring stack: kube-prometheus-stack + Loki + Promtail/Alloy + Alertmanager, all **self-hosted in cluster** (no SaaS stores logs) | SRE | `feature/inf-15-monitoring-stack` | `platform/monitoring/` | INF-13, INF-14 | DO2 |
-| INF-16 | Cost controls: tagging standard, AWS Budget + alert, `make destroy-staging` script / teardown workflow | SRE | `feature/inf-16-cost-controls` | `envs/*`, `.github/workflows/teardown.yml` | INF-10 | SA |
+| INF-01 | Repo setup: branch protection, CODEOWNERS, PR template, `.gitignore`, gitleaks pre-commit, Jira link, README skeleton | DO1 | `SCRUM-<n>-repo-setup` | `.github/*`, `README.md` | – | SA |
+| INF-02 | Bootstrap **each account** (dev, staging, prod): S3 state bucket (versioned, KMS), lock table, GitHub OIDC provider | DO1 | `SCRUM-<n>-bootstrap` | `bootstrap/` | INF-01 | SRE |
+| INF-03 | OIDC roles `gha-dev`, `gha-staging`, `gha-prod`. Trust is pinned to `repo:merlion-trust-bank-sg/*` + environment; `gha-prod` trusts only `environment:production`; each role is scoped to its own account | DO1 | `SCRUM-<n>-oidc-roles` | `modules/iam-ci/` | INF-02 | SA |
+| INF-04 | KMS module: CMKs for RDS, S3 (state + audit), CloudWatch Logs, Secrets Manager; key policies, rotation on | DO2 | `SCRUM-<n>-kms` | `modules/kms/` | INF-02 | DO1 |
+| INF-05 | Network: VPC across **2 AZs (`us-east-1a`, `us-east-1b`)**. Public subnets (ALB, NAT), private subnets (EKS), **isolated DB subnets with no internet route**, VPC endpoints (ECR, S3, Secrets Manager, Logs, STS). 1 NAT in dev/staging | DO1 | `SCRUM-<n>-network` | `modules/network/` | INF-02 | SA |
+| INF-06 | EKS: cluster in private subnets, managed node group, IRSA, control-plane logs **including `audit`** → CloudWatch | DO1 | `SCRUM-<n>-eks` | `modules/eks/` | INF-05 | SRE |
+| INF-07 | RDS: `accounts-db` and `ledger-db` PostgreSQL in isolated DB subnets. Multi-AZ in staging/prod, single-AZ in dev. KMS encryption, automated backups, `rds.force_ssl = 1`, SG allows only EKS nodes | DO2 | `SCRUM-<n>-rds` | `modules/rds/` | INF-04, INF-05 | DO1 |
+| INF-08 | ECR: one repo per service, **immutable tags**, scan on push, lifecycle policy. Promotion model (central vs per-account) per ADR-007 | DO2 | `SCRUM-<n>-ecr` | `modules/ecr/` | INF-02 | DO1 |
+| INF-09 | Secrets Manager: DB credentials (RDS-managed master secret) and JWT key pair, KMS-encrypted. Read access only for the External Secrets IRSA role | DO2 | `SCRUM-<n>-secrets` | `modules/secrets/` | INF-04, INF-07 | SRE |
+| INF-10 | Audit: CloudTrail in **all 3 accounts** (management + data events for audit bucket) → S3 bucket with **Object Lock compliance mode, 365 days**, log file validation, bucket policy denying delete/`PutBucketObjectLockConfiguration` to engineering roles; prefixes for EKS audit logs and pipeline deploy records | SA | `SCRUM-<n>-audit-trail` | `modules/audit/` | INF-04 | DO1 |
+| INF-11 | Region guardrail: `var.region = "us-east-1"` in every env root; deny-other-regions policy on CI roles; CloudTrail alarm on console write events in prod | SA | `SCRUM-<n>-region-guardrail` | `modules/iam-ci/`, `envs/*/providers.tf` | INF-03, INF-10 | DO1 |
+| INF-12 | Env roots `envs/dev`, `envs/staging`, `envs/prod` wiring all modules. Separate state per account; dev smallest sizes, staging prod-like | DO1 | `SCRUM-<n>-env-roots` | `envs/` | INF-04…10 | DO2 |
+| INF-13 | Infra pipeline. **PR:** fmt / validate / tflint / **checkov (fail on HIGH)** / `plan` per env posted as PR comment. **main:** apply dev (`gha-dev`) → staging (`gha-staging`) → **manual approval** → prod (`gha-prod`) | DO2 | `SCRUM-<n>-tf-pipeline` | `.github/workflows/tf-*.yml` | INF-03, INF-12 | DO1 |
+| INF-14 | Cluster add-ons part 1: **AWS Load Balancer Controller** (IRSA), **ACM certificate** for the ALB, **External Secrets Operator** (IRSA → Secrets Manager) | DO2 | `SCRUM-<n>-addons-lb-eso` | `modules/addons/` | INF-06, INF-09 | SRE |
+| INF-15 | Cluster add-ons part 2: **Fluent Bit** → CloudWatch Logs, **CloudWatch agent / Container Insights**. Log groups per env with **365-day retention** and KMS | SRE | `SCRUM-<n>-addons-observability` | `modules/addons/`, `modules/observability/` | INF-06, INF-04 | DO2 |
+| INF-16 | Alert delivery: SNS topic (KMS) → email subscription + Telegram (small Lambda forwarder, bot token in Secrets Manager) | SRE | `SCRUM-<n>-sns-alerting` | `modules/observability/` | INF-15 | DO2 |
+| INF-17 | CloudWatch **dashboard** ("is the system healthy right now?"): SLO status, ALB requests / 5xx / p95, pod CPU and memory, Logs Insights panel. **SLO alarms** (availability, p95) → SNS | SRE | `SCRUM-<n>-dashboard-alarms` | `modules/observability/` | INF-15, INF-16, APP-13 | SA |
+| INF-18 | Cost controls: tagging standard, AWS Budgets alert per account, **dev scale-to-0 overnight** (scheduled node group scaling), teardown workflow | SRE | `SCRUM-<n>-cost-controls` | `envs/dev/`, `.github/workflows/teardown.yml` | INF-12 | SA |
 
-### Docs check-ins (`merlion-infra/docs`)
+### 5.2 Docs and ADRs (`merlion-bank-infra/docs`)
 
 | ID | Task | Owner | Branch | Reviewer |
 |---|---|---|---|---|
-| DOC-01 | Business requirements summary: functional, non-functional, constraints, assumptions | SA | `docs/doc-01-requirements` | SRE |
-| DOC-02 | Architecture diagram (app, network, environments, CI/CD, observability), must match what's deployed | SA | `docs/doc-02-architecture` | DO1 |
-| DOC-03 | Service selection justification: chosen vs alternative vs why (compute, DB, CI/CD, observability) | SA | `docs/doc-03-service-selection` | DO2 |
-| DOC-04 | Constraint compliance mapping: constraint → decision → evidence (file path, policy, screenshot) | SA | `docs/doc-04-compliance-map` | SRE |
-| DOC-05 | Monthly prod cost estimate (AWS Pricing Calculator export + table) | SA | `docs/doc-05-cost` | SRE |
-| DOC-06 | ADR-001 Runtime (EKS vs ECS) | SA | `docs/adr-001-runtime` | DO1 |
-| DOC-07 | ADR-002 CI/CD platform + Singapore self-hosted runners (CI log residency) | DO2 | `docs/adr-002-cicd` | SA |
-| DOC-08 | ADR-003 Self-hosted observability vs SaaS (data residency) | SRE | `docs/adr-003-observability` | SA |
-| DOC-09 | ADR-004 Audit log immutability (S3 Object Lock compliance mode) | SA | `docs/adr-004-audit-retention` | DO1 |
-| DOC-10 | ADR-005 Credentials: GitHub OIDC per environment, no static keys | DO1 | `docs/adr-005-oidc` | DO2 |
+| DOC-01 | Business requirements summary: functional, non-functional, constraints, assumptions (including the region directive) | SA | `SCRUM-<n>-requirements` | SRE |
+| DOC-02 | Architecture diagram: update the region label to `us-east-1` and keep it matching what's deployed | SA | `SCRUM-<n>-architecture-diagram` | DO1 |
+| DOC-03 | Service selection: chosen vs alternative vs why (EKS, RDS, GitHub Actions, CloudWatch, Secrets Manager) | SA | `SCRUM-<n>-service-selection` | DO2 |
+| DOC-04 | Constraint compliance mapping: constraint → decision → evidence (see [section 8](#8-hard-constraint-traceability)) | SA | `SCRUM-<n>-compliance-map` | SRE |
+| DOC-05 | Monthly prod cost estimate with `us-east-1` pricing (EKS, nodes, 2× Multi-AZ RDS, NAT, ALB, CloudWatch, CloudTrail, S3) plus dev/staging run cost | SA | `SCRUM-<n>-cost-estimate` | SRE |
+| DOC-06 | ADR-001 Runtime: EKS vs ECS | SA | `SCRUM-<n>-adr-001-runtime` | DO1 |
+| DOC-07 | ADR-002 Multi-account dev/staging/prod vs single account | DO1 | `SCRUM-<n>-adr-002-accounts` | SA |
+| DOC-08 | ADR-003 Observability: CloudWatch (in-region, no SaaS) vs self-hosted Prometheus/Loki | SRE | `SCRUM-<n>-adr-003-observability` | SA |
+| DOC-09 | ADR-004 Audit log immutability: S3 Object Lock compliance mode, 1 year | SA | `SCRUM-<n>-adr-004-audit` | DO1 |
+| DOC-10 | ADR-005 Credentials: GitHub OIDC per environment, no static keys | DO1 | `SCRUM-<n>-adr-005-oidc` | DO2 |
+| DOC-11 | ADR-006 Region: `us-east-1` per instructor directive (deviation from the brief, approval recorded, region parameterised) | SA | `SCRUM-<n>-adr-006-region` | SRE |
+| DOC-12 | ADR-007 Image promotion: build once, promote the same digest dev → staging → prod (central ECR vs per-account copy) | DO2 | `SCRUM-<n>-adr-007-promotion` | DO1 |
 
----
-
-## 5. `merlion-app` – task breakdown
+### 5.3 `merlion-bank-app`
 
 | ID | Task | Owner | Branch | Key files | Depends on | Reviewer |
 |---|---|---|---|---|---|---|
-| APP-01 | Create repo, branch protection, CODEOWNERS, PR template, GitHub Environments `staging` and `production` (prod requires reviewers) | DO2 | `feature/app-01-repo-setup` | `.github/*` | – | DO1 |
-| APP-02 | Vendor Bank of Anthos source at a pinned release tag into `src/`, recording the upstream commit in README | DO2 | `feature/app-02-import-source` | `src/`, `README.md` | APP-01 | SA |
-| APP-03 | Image builds: build each service (frontend, userservice, contacts, balancereader, ledgerwriter, transactionhistory, loadgenerator), tagged with git SHA | DO2 | `feature/app-03-image-builds` | `docker/`, `ci.yml` | APP-02, INF-07 | DO1 |
-| APP-04 | **Security gate 1 – SCA:** Trivy `fs` / OWASP dependency-check, fail on **CRITICAL/HIGH** with fix available, no `|| true` | DO2 | `feature/app-04-sca-gate` | `ci.yml` | APP-03 | SRE |
-| APP-05 | **Security gate 2 – image scan:** Trivy image, `--exit-code 1 --severity HIGH,CRITICAL`, block push to ECR on failure | DO2 | `feature/app-05-image-gate` | `ci.yml`, `security/.trivyignore` | APP-03 | SRE |
-| APP-06 | Secret scanning: gitleaks in CI | DO1 | `feature/app-06-gitleaks` | `ci.yml` | APP-01 | DO2 |
-| APP-07 | Helm chart (our own): Deployments/Services per service, resource requests/limits, probes, HPA, PodDisruptionBudgets; DB endpoints pointed at RDS | DO1 | `feature/app-07-helm-chart` | `deploy/helm/` | APP-03, INF-06 | DO2 |
-| APP-08 | Secrets delivery: `ExternalSecret` objects pulling DB credentials and JWT keys from AWS Secrets Manager. Nothing in values files or images | DO1 | `feature/app-08-external-secrets` | `deploy/helm/templates/externalsecret.yaml` | APP-07, INF-13 | SRE |
-| APP-09 | Env values: `values-staging.yaml` / `values-prod.yaml` (replicas, ingress hosts, resources) | DO1 | `feature/app-09-env-values` | `deploy/helm/values-*.yaml` | APP-07 | SA |
-| APP-10 | CD pipeline: on `main` → push to ECR → assume `gh-app-staging` (OIDC) → `helm upgrade` staging → smoke test → **manual approval** → assume `gh-app-prod` → deploy prod | DO2 | `feature/app-10-cd-pipeline` | `cd.yml` | APP-05, APP-09, INF-03 | DO1 |
-| APP-11 | Deployment audit record: pipeline writes `{who, PR, commit SHA, image digest, env, time}` to the Object Lock bucket on every prod deploy | SA | `feature/app-11-deploy-audit` | `cd.yml` | APP-10, INF-08 | DO2 |
-| APP-12 | Pipeline README: feature → PR → staging → prod flow, how approvals work, **what happens when a security gate fails** | DO2 | `docs/app-12-pipeline-readme` | `README.md` | APP-10 | SA |
-| APP-13 | Metrics scraping: ServiceMonitors for app services (Bank of Anthos exposes metrics), ingress-nginx metrics for request rate, errors and latency | SRE | `feature/app-13-servicemonitors` | `deploy/helm/templates/servicemonitor.yaml` | APP-07, INF-15 | DO1 |
-| APP-14 | SLIs and SLOs: availability (non-5xx ratio ≥ 99.5%) and p95 latency on transaction history (< 500 ms), justified for a bank enquiry portal, with error budget | SRE | `feature/app-14-slo` | `ops/slo/slo.md` | APP-13 | SA |
-| APP-15 | Alerts: ≥2 PrometheusRules tied to SLOs (e.g. error-rate burn, p95 latency breach) + key failure mode (pod CrashLoop / DB unreachable); Alertmanager → email/Telegram. Alert text carries no customer data | SRE | `feature/app-15-alerts` | `ops/alerts/`, `platform/monitoring/` | APP-14 | DO2 |
-| APP-16 | Dashboard: "Is the system healthy right now?" – SLO status, request rate, error rate, p95, pod/node CPU and memory, Loki log panel | SRE | `feature/app-16-dashboard` | `ops/dashboards/` | APP-13 | SA |
-| APP-17 | Incident runbook: e.g. "ledger-db connection failure" – detection, diagnosis, mitigation, escalation | SRE | `docs/app-17-runbook` | `ops/runbooks/` | APP-15 | DO1 |
-| APP-18 | Demo prep: scripted failing-gate PR (vulnerable base image) and alert trigger (scale `ledgerwriter` to 0 or break DB secret in staging) | SRE + DO2 | `feature/app-18-demo-scripts` | `ops/demo/` | APP-05, APP-15 | SA |
+| APP-01 | Repo setup: branch protection, CODEOWNERS, PR template, GitHub Environments `dev`, `staging`, `production` (prod requires reviewers) | DO2 | `SCRUM-<n>-repo-setup` | `.github/*` | – | DO1 |
+| APP-02 | Vendor Bank of Anthos source at a pinned release tag into `src/`, recording the upstream commit in README | DO2 | `SCRUM-<n>-import-source` | `src/`, `README.md` | APP-01 | SA |
+| APP-03 | Build images for the **6 services** (+ `loadgenerator` for staging), tagged with git SHA, pushed by digest | DO2 | `SCRUM-<n>-image-builds` | `ci.yml` | APP-02, INF-08 | DO1 |
+| APP-04 | **Security gate 1 – SCA:** Trivy `fs` / OWASP dependency-check on Python + Java deps, **fail on HIGH/CRITICAL**, exit code not suppressed | DO2 | `SCRUM-<n>-sca-gate` | `ci.yml` | APP-03 | SRE |
+| APP-05 | **Security gate 2 – image scan:** Trivy image `--exit-code 1 --severity HIGH,CRITICAL`, blocks push to ECR | DO2 | `SCRUM-<n>-image-scan-gate` | `ci.yml`, `security/.trivyignore` | APP-03 | SRE |
+| APP-06 | Secret scanning: gitleaks in CI | DO1 | `SCRUM-<n>-gitleaks` | `ci.yml` | APP-01 | DO2 |
+| APP-07 | Helm chart (our own): 6 Deployments + Services, **`frontend` ≥ 2 replicas**, probes, requests/limits, PDBs, HPA on `frontend`. Ingress `ingressClassName: alb` with ACM cert and HTTPS 443. DB endpoints → RDS over TLS | DO1 | `SCRUM-<n>-helm-chart` | `deploy/helm/` | APP-03, INF-07, INF-14 | DO2 |
+| APP-08 | Secrets wiring: `ExternalSecret` objects for DB creds + JWT key pair → Kubernetes Secrets → pods. Nothing in values files or images | DO1 | `SCRUM-<n>-external-secrets` | `deploy/helm/templates/externalsecret.yaml` | APP-07, INF-09, INF-14 | SRE |
+| APP-09 | Env values: `values-dev` (1 replica, smallest), `values-staging` (prod-like, `loadgenerator` on), `values-prod` | DO1 | `SCRUM-<n>-env-values` | `deploy/helm/values-*.yaml` | APP-07 | SA |
+| APP-10 | CD pipeline: merge to `main` → build + gates → push → **dev** (`gha-dev`) auto → smoke tests → **staging** (`gha-staging`) auto, same digest → **manual approval** → **prod** (`gha-prod`) | DO2 | `SCRUM-<n>-cd-pipeline` | `cd.yml` | APP-05, APP-09, INF-03 | DO1 |
+| APP-11 | Deploy audit record: on every prod deploy, the pipeline writes `{actor, approver, PR, commit SHA, image digest, env, timestamp}` to the Object Lock bucket | SA | `SCRUM-<n>-deploy-audit` | `cd.yml` | APP-10, INF-10 | DO2 |
+| APP-12 | Pipeline README: SCRUM branch → PR → dev → staging → prod; approvals; **what happens when a security gate fails**; CI-log hygiene note | DO2 | `SCRUM-<n>-pipeline-readme` | `README.md` | APP-10 | SA |
+| APP-13 | Logging check: all 6 services log to stdout, visible in CloudWatch Logs per service. Save Logs Insights queries (errors per service, failed logins, ledger write failures) | SRE | `SCRUM-<n>-log-queries` | `ops/queries/` | APP-10, INF-15 | DO1 |
+| APP-14 | SLIs and SLOs: **availability** = 1 − ALB 5xx ratio (target 99.9%); **p95 latency** = ALB `TargetResponseTime` p95 (target < 500 ms). Justification + error budget | SRE | `SCRUM-<n>-slo` | `ops/slo/slo.md` | APP-13 | SA |
+| APP-15 | Incident runbook, e.g. "ledger-db failover / connection errors": detection (alarm), diagnosis (dashboard, Logs Insights, RDS events), mitigation, escalation | SRE | `SCRUM-<n>-runbook` | `ops/runbooks/` | INF-17 | DO1 |
+| APP-16 | Demo prep: failing-gate PR (vulnerable base image), alert trigger (scale `frontend` to 0 or break a DB secret in staging), audit trail walkthrough for the last prod deploy | SRE + DO2 | `SCRUM-<n>-demo-scripts` | `ops/demo/` | APP-05, INF-17, APP-11 | SA |
 
 ---
 
 ## 6. Check-in sequence (suggested 4 weeks)
 
-| Week | `merlion-infra` | `merlion-app` | Docs |
+| Week | `merlion-bank-infra` | `merlion-bank-app` | Docs |
 |---|---|---|---|
-| **1 – Foundations** | INF-01, INF-02, INF-03, INF-04 | APP-01, APP-02 | DOC-01, DOC-06 (runtime ADR first – everything depends on it) |
-| **2 – Platform** | INF-05, INF-06, INF-07, INF-08, INF-09, INF-10, INF-11 | APP-03, APP-04, APP-05, APP-06 | DOC-02 draft, DOC-03, DOC-10 |
-| **3 – Deploy + observe** | INF-12, INF-13, INF-14, INF-15 | APP-07, APP-08, APP-09, APP-10, APP-11, APP-13 | DOC-07, DOC-08, DOC-09 |
-| **4 – Operate + harden** | INF-16 | APP-12, APP-14, APP-15, APP-16, APP-17, APP-18 | DOC-02 final (match deployed), DOC-04, DOC-05, final README |
+| **1 – Foundations** | INF-01, INF-02, INF-03, INF-04, INF-05 | APP-01, APP-02 | DOC-01, DOC-06, DOC-07, DOC-11 |
+| **2 – Platform** | INF-06, INF-07, INF-08, INF-09, INF-10, INF-11, INF-12, INF-13 | APP-03, APP-04, APP-05, APP-06 | DOC-03, DOC-10, DOC-12 |
+| **3 – Deploy + observe** | INF-14, INF-15, INF-16 | APP-07, APP-08, APP-09, APP-10, APP-11, APP-13 | DOC-08, DOC-09 |
+| **4 – Operate + harden** | INF-17, INF-18 | APP-12, APP-14, APP-15, APP-16 | DOC-02 final (matches deployed), DOC-04, DOC-05, final README |
 
-**Critical path:** INF-02 → INF-03 → INF-04 → INF-05 → INF-13 → APP-07 → APP-10 → (prod running) → APP-13 → APP-15 → live alert demo.
+**Critical path:** INF-02 → INF-03 → INF-05 → INF-06 → INF-14 → APP-07 → APP-10 (prod running) → INF-15 → INF-17 → live alert demo.
 
 ---
 
@@ -184,35 +208,35 @@ Do these tasks roughly in order: each one's dependencies are listed in "Depends 
 
 Number of PRs each member authors in each repo:
 
-| Member | `merlion-infra` | `merlion-app` | Docs / ADRs | Total |
+| Member | `merlion-bank-infra` | `merlion-bank-app` | Docs / ADRs | Total |
 |---|---|---|---|---|
-| SA | 2 (INF-08, INF-09) | 1 (APP-11) | 7 (DOC-01–06, 09) | 10 |
-| DO1 | 6 (INF-01–05, INF-10) | 4 (APP-06–09) | 1 (DOC-10) | 11 |
-| DO2 | 5 (INF-06, 07, 11, 12, 13) | 7 (APP-01–05, 10, 12) | 1 (DOC-07) | 13 |
-| SRE | 3 (INF-14, 15, 16) | 6 (APP-13–18) | 1 (DOC-08) | 10 |
+| SA | 2 (INF-10, 11) | 1 (APP-11) | 8 (DOC-01–06, 09, 11) | 11 |
+| DO1 | 6 (INF-01, 02, 03, 05, 06, 12) | 4 (APP-06–09) | 2 (DOC-07, 10) | 12 |
+| DO2 | 6 (INF-04, 07, 08, 09, 13, 14) | 7 (APP-01–05, 10, 12) | 1 (DOC-12) | 14 |
+| SRE | 4 (INF-15–18) | 4 (APP-13–16) | 1 (DOC-08) | 9 |
 
-Each member also **reviews** roughly 10 PRs, so review history shows cross-role collaboration too.
+Each member also **reviews** roughly 10–12 PRs, so the review history shows cross-role collaboration.
 
 ---
 
-## 8. Hard-constraint traceability (what to point at in the Q&A)
+## 8. Hard-constraint traceability
 
 | Constraint | Check-in that satisfies it | Evidence to show |
 |---|---|---|
-| **Data residency** – DB, backups, logs in `ap-southeast-1` | INF-06 (RDS in-region, no cross-region copy), INF-09 (region pin + deny), INF-14/15 (Loki on S3 in SG, self-hosted), INF-12 (SG runners) | `terraform state show` region, Loki bucket region, ADR-003, ADR-002 |
-| **Auditability** – every prod change traceable | Branch protection (INF-01/APP-01), plan-in-PR (INF-11), prod approval gate (APP-10), deploy audit record (APP-11), CloudTrail (INF-08) | PR → review → Actions run → approver → audit JSON → CloudTrail event |
-| **Audit log retention 1 yr, tamper-proof** | INF-08 Object Lock **compliance mode** 365 days, delete denied to engineering roles | Bucket Object Lock config, failed `DeleteObject` attempt, ADR-004 |
-| No console changes to prod | INF-03 (prod roles only assumable from the prod GitHub Environment), CloudTrail alerts on console writes | IAM trust policy, CloudTrail query |
-| Credential separation | INF-03 per-env OIDC roles, APP-10 assumes a different role per stage | Staging role attempting a prod action → `AccessDenied` |
-| Security gates actually block | APP-04, APP-05, INF-11 checkov | Demo PR with failing scan (APP-18) |
+| **Data residency** (one approved region: `us-east-1` per instructor) | INF-05/07 (VPC, RDS, backups in-region, no cross-region copy), INF-11 (region pin + deny), INF-15 (CloudWatch Logs in-region, no SaaS), CI-log hygiene rule | `terraform state show` region, RDS backup config, log group ARNs, ADR-003, ADR-006 |
+| **Auditability** (every prod change traceable) | Branch protection + SCRUM links (INF-01/APP-01), plan on PR (INF-13), prod approval (APP-10), deploy record (APP-11), CloudTrail incl. OIDC role sessions (INF-10) | Jira ticket → PR → reviewer → Actions run → approver → deploy record → CloudTrail `AssumeRoleWithWebIdentity` event |
+| **Audit log retention 1 yr, tamper-proof** | INF-10 Object Lock **compliance mode** 365 days, delete denied to engineering roles | Bucket Object Lock config, a failed `DeleteObject` attempt, ADR-004 |
+| No console changes to prod | INF-03 (`gha-prod` only from `production` environment), INF-11 (console-write alarm) | IAM trust policy, CloudTrail query |
+| Credential separation | INF-03 per-account roles, APP-10 assumes a different role per stage | `gha-staging` trying a prod action → `AccessDenied` |
+| Security gates block | APP-04, APP-05, INF-13 checkov | Demo PR with a failing scan (APP-16) |
 
 ---
 
 ## 9. Definition of done for every PR
 
-- [ ] Linked to a task ID above
+- [ ] Branch named `SCRUM-<n>-*` and linked to a Jira issue
 - [ ] Reviewed and approved by someone who isn't the author
-- [ ] CI green (fmt/lint/scan/plan or build/scan)
-- [ ] No secrets, no hard-coded account IDs or regions outside `ap-southeast-1`
-- [ ] Docs, ADRs or diagrams updated if the design changed
-- [ ] For infra: `terraform plan` output attached to the PR, and nothing applied manually
+- [ ] CI green (fmt/lint/checkov/plan, or build/SCA/image scan/gitleaks)
+- [ ] No secrets; region only via `var.region` (`us-east-1`)
+- [ ] Docs, ADRs or diagram updated if the design changed
+- [ ] Infra: `terraform plan` attached to the PR, nothing applied manually
