@@ -1,17 +1,17 @@
 # Replace each @handle with the real GitHub username (task breakdown section 4).
 # A PR touching these paths needs an approval from the owner.
-*                               kealeee paulyapsl @DO2_HANDLE yqyeoh
-/bootstrap/                     paulyapsl
-/modules/network/               paulyapsl
-/modules/eks/                   paulyapsl
-/modules/iam-ci/                paulyapsl kealeee
-/modules/rds/                   paulyapsl
-/modules/ecr/                   paulyapsl
-/modules/kms/                   paulyapsl
-/modules/secrets/               paulyapsl
-/modules/addons/                paulyapsl
-/.github/                       paulyapsl
-/.checkov.yaml                  paulyapsl kealeee
-/modules/observability/         yqyeoh
-/docs/                          kealeee
-/modules/audit/                 kealeee
+*                               @kealeee @paulyapsl @DO2_HANDLE @yqyeoh
+/bootstrap/                     @paulyapsl
+/modules/network/               @paulyapsl
+/modules/eks/                   @paulyapsl
+/modules/iam-ci/                @paulyapsl @kealeee
+/modules/rds/                   @paulyapsl
+/modules/ecr/                   @paulyapsl
+/modules/kms/                   @paulyapsl
+/modules/secrets/               @paulyapsl
+/modules/addons/                @paulyapsl
+/.github/                       @paulyapsl
+/.checkov.yaml                  @paulyapsl @kealeee
+/modules/observability/         @yqyeoh
+/docs/                          @kealeee
+/modules/audit/                 @kealeee
