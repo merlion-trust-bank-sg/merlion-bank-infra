@@ -1,6 +1,6 @@
 # Replace each @handle with the real GitHub username (task breakdown section 4).
 # A PR touching these paths needs an approval from the owner.
-*                               @kealeee @paulyapsl @DO2_HANDLE @yqyeoh
+*                               @kealeee @paulyapsl @yqyeoh
 /bootstrap/                     @paulyapsl
 /modules/network/               @paulyapsl
 /modules/eks/                   @paulyapsl
