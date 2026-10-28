@@ -1,0 +1,11 @@
+# checkov -d . --config-file .checkov.yaml
+# Checkov's free CLI has no severities, so EVERY failed check fails the
+# build. Accepted exceptions are written next to the resource as
+#   #checkov:skip=<ID>:<reason>
+# and reviewed in the PR like any other change. Only repo-wide skips here:
+framework:
+  - terraform
+skip-check:
+  - CKV_TF_1 # registry modules are pinned by version (~> x.y); commit hashes are not used
+compact: true
+quiet: true

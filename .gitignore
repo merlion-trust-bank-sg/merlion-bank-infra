@@ -1,5 +1,21 @@
-
-**/.terraform/*
+# Terraform
+.terraform/
 *.tfstate
 *.tfstate.*
+*.tfplan
 tfplan
+plan.txt
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+# variable files that hold secrets (normal terraform.tfvars has none and IS committed)
+*.secret.tfvars
+*.auto.tfvars
+# credentials and kubeconfigs
+.env
+*.pem
+*.key
+kubeconfig
+.kube/
+.aws/
