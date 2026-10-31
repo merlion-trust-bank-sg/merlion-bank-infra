@@ -47,12 +47,12 @@
 <rect class="box" x="45" y="262" width="270" height="85" rx="4"/>
 <text class="t2" x="58" y="282">merlion-bank-app</text>
 <text class="s" x="58" y="301">build → SCA → image scan → ECR</text>
-<text class="s" x="58" y="319">dev auto → staging auto after tests</text>
+<text class="s" x="58" y="319">staging auto on merge + smoke tests</text>
 <text class="s" x="58" y="337">production: manual approval</text>
 <rect class="box" x="45" y="357" width="270" height="85" rx="4"/>
 <text class="t2" x="58" y="377">merlion-bank-infra</text>
 <text class="s" x="58" y="396">checkov → Terraform plan on PR</text>
-<text class="s" x="58" y="414">apply dev → staging</text>
+<text class="s" x="58" y="414">apply staging</text>
 <text class="s" x="58" y="432">production: manual approval</text>
 <line class="arr" x1="180" y1="455" x2="180" y2="478" marker-end="url(#a)"/>
 
@@ -66,7 +66,7 @@
 <text class="s" x="45" y="608">Short-lived creds, no stored keys</text>
 <line class="rarr" x1="330" y1="592" x2="378" y2="592" marker-end="url(#r)"/>
 
-<text class="s" x="30" y="645">gha-dev / gha-staging → own account only</text>
+<text class="s" x="30" y="645">gha-staging → staging account only</text>
 <text class="s" x="30" y="665">gha-prod → prod account, after approval</text>
 
 <text class="m" x="30" y="705" font-size="12">NOTE</text>
@@ -159,17 +159,16 @@
 
 <!-- ===== Right column ===== -->
 <rect class="frame" x="1180" y="130" width="380" height="250" rx="4"/>
-<text class="t" x="1195" y="154">Non-production · separate accounts</text>
-<rect class="box" x="1195" y="168" width="350" height="98" rx="4"/>
-<text class="t" x="1208" y="189">Development account</text>
-<text class="s" x="1208" y="209">EKS + RDS single-AZ, smallest sizes</text>
-<text class="s" x="1208" y="227">Auto-deploy on merge to main</text>
-<text class="s" x="1208" y="245">Nodes → 0 and RDS stopped overnight</text>
-<rect class="box" x="1195" y="274" width="350" height="98" rx="4"/>
-<text class="t" x="1208" y="295">Staging account</text>
-<text class="s" x="1208" y="315">Prod-like sizing, same Terraform modules</text>
-<text class="s" x="1208" y="333">Same image digest promoted after dev tests</text>
-<text class="s" x="1208" y="351">loadgenerator · synthetic data only</text>
+<text class="t" x="1195" y="154">Non-production · separate account</text>
+<rect class="box" x="1195" y="168" width="350" height="140" rx="4"/>
+<text class="t" x="1208" y="190">Staging account</text>
+<text class="s" x="1208" y="211">Same Terraform modules, smaller sizes</text>
+<text class="s" x="1208" y="229">EKS + RDS single-AZ</text>
+<text class="s" x="1208" y="247">Auto-deploy on merge to main + smoke tests</text>
+<text class="s" x="1208" y="265">loadgenerator · synthetic data only</text>
+<text class="s" x="1208" y="283">Nodes → 0 and RDS stopped when idle</text>
+<text class="s" x="1195" y="336">No dev environment: PR checks (plan, scans)</text>
+<text class="s" x="1195" y="354">give fast feedback before merge (ADR-002).</text>
 
 <rect class="frame" x="1180" y="400" width="380" height="320" rx="4"/>
 <text class="t" x="1195" y="424">Production platform services</text>
@@ -223,12 +222,12 @@
 <rect class="frame" x="1180" y="740" width="380" height="300" rx="4"/>
 <text class="t" x="1195" y="764">Audit · tamper-resistant</text>
 <rect class="box" x="1195" y="780" width="350" height="58" rx="4"/>
-<text class="t" x="1208" y="802">CloudTrail (all 3 accounts)</text>
+<text class="t" x="1208" y="802">CloudTrail (both accounts)</text>
 <text class="s" x="1208" y="822">Every API call, incl. OIDC role sessions</text>
 <line class="arr" x1="1370" y1="838" x2="1370" y2="866" marker-end="url(#a)"/>
 <rect class="red" x="1195" y="868" width="350" height="58" rx="4"/>
 <text class="t" x="1208" y="890">S3 Object Lock bucket (log-archive)</text>
-<text class="s" x="1208" y="910">Compliance mode · 1-year retention</text>
+<text class="s" x="1208" y="910">Governance mode · 1 year · bypass denied</text>
 <text class="s" x="1195" y="960">Also stores EKS audit logs (via Firehose)</text>
 <text class="s" x="1195" y="978">and pipeline deploy records (who, what, when).</text>
 
