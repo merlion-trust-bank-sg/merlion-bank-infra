@@ -2,6 +2,11 @@ variable "region" {
   description = "The ONE approved region (ADR-006). Change here + redeploy to move."
   type        = string
   default     = "us-east-1"
+
+  validation {
+    condition     = var.region == "us-east-1"
+    error_message = "ADR-006: only us-east-1 is approved."
+  }
 }
 
 # tflint-ignore: terraform_unused_declarations

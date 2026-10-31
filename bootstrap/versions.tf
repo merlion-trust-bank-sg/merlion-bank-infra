@@ -19,7 +19,8 @@ terraform {
 }
 
 provider "aws" {
-  region = var.region
+  region              = var.region
+  allowed_account_ids = ["255945442255"] # hard stop if logged in to another account
   # No Environment tag here: CI roles and ECR repos are tagged
   # Environment = "shared" in their modules (the fence then blocks every
   # gha-<env> role from changing them). Buckets are protected by bucket policy.
