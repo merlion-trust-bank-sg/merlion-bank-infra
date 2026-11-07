@@ -13,7 +13,7 @@ state bucket and KMS key, per-environment CI roles, and IAM guardrails (ADR-002)
 | `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); later ECR, audit trail | admin, once (see below) |
 | `modules/` | kms, network, eks, rds, ecr, secrets, iam-ci, audit, addons | - |
 | `envs/{staging,prod}` | one root per environment, own state bucket and key | **pipeline only** |
-| `.github/workflows/tf-plan.yml` | PR: gitleaks, fmt, validate, tflint, checkov, staging plan comment | GitHub Actions |
+| `.github/workflows/tf-plan.yml` | PR: gitleaks, fmt, validate, tflint, checkov, staging plan | GitHub Actions |
 | `.github/workflows/tf-apply.yml` | main: apply staging -> plan prod -> approval -> apply prod | GitHub Actions |
 
 ## CI roles
@@ -78,7 +78,7 @@ in `envs/` goes through this pipeline.
    | `terraform validate` | Invalid configuration in `bootstrap/` or an environment |
    | tflint | Invalid AWS values, unused declarations, missing versions |
    | checkov | Any security check fails. Exceptions are `#checkov:skip` comments with a reason, reviewed in the PR. |
-   | `terraform plan` (staging) | Plan errors. The plan is posted as a PR comment for the reviewer. |
+   | `terraform plan` (staging) | Plan errors. The reviewer reads the plan in the job log. |
 
 3. **Review:** one approval from someone other than the author, all checks green, conversations
    resolved (enforced by the `main` ruleset). Squash merge.

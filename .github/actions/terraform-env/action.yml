@@ -1,0 +1,32 @@
+name: terraform-env
+description: Log in to AWS with a CI role (GitHub OIDC), install Terraform, and run terraform init in a folder.
+
+inputs:
+  role:
+    description: CI role name, e.g. g4-merlion-ci-staging
+    required: true
+  workdir:
+    description: Terraform folder, e.g. envs/staging
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Session name links every AWS call in CloudTrail back to this GitHub run
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: arn:aws:iam::255945442255:role/${{ inputs.role }}
+        role-session-name: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        aws-region: us-east-1
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v4
+      with:
+        terraform_version: "~1.15"
+        terraform_wrapper: false
+
+    - name: Terraform init
+      shell: bash
+      working-directory: ${{ inputs.workdir }}
+      run: terraform init

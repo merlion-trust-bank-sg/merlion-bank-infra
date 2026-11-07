@@ -19,10 +19,8 @@ permissions:
   id-token: write
 
 env:
-  AWS_REGION: us-east-1
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
-  ACCOUNT: "255945442255"
 
 jobs:
   apply-staging:
@@ -33,26 +31,22 @@ jobs:
       group: tf-staging
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - uses: aws-actions/configure-aws-credentials@v6
+      - name: AWS login + Terraform init (staging, deploy role)
+        uses: ./.github/actions/terraform-env
         with:
-          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/g4-merlion-ci-staging
-          role-session-name: ci-${{ github.run_id }}-${{ github.run_attempt }}
-          aws-region: ${{ env.AWS_REGION }}
+          role: g4-merlion-ci-staging
+          workdir: envs/staging
 
-      - uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: "~1.15"
-          terraform_wrapper: false
-
-      - name: terraform apply (staging)
+      - name: Terraform plan (staging)
         working-directory: envs/staging
-        run: |
-          set -euo pipefail
-          terraform init -input=false
-          terraform plan -input=false -no-color -lock-timeout=5m -out=staging.tfplan
-          terraform apply -input=false -no-color -lock-timeout=5m staging.tfplan
+        run: terraform plan -lock-timeout=5m -out=staging.tfplan
+
+      - name: Terraform apply (staging)
+        working-directory: envs/staging
+        run: terraform apply -lock-timeout=5m staging.tfplan
 
   plan-prod:
     name: plan prod
@@ -61,14 +55,14 @@ jobs:
     # No environment on purpose: this job's OIDC sub is ref:refs/heads/main, which only the read-only
     # ci-prod-plan role trusts. Approval happens once, on apply-prod, with this plan in front of the reviewer.
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # whole history: needed to compare this commit with main
 
       # Never plan prod from an old commit: re-running an old run would plan prod back to older code
       - name: Only the latest commit on main
         run: |
-          set -euo pipefail
           git fetch --quiet origin main
           latest="$(git rev-parse origin/main)"
           if [ "$latest" != "$GITHUB_SHA" ]; then
@@ -76,32 +70,28 @@ jobs:
             exit 1
           fi
 
-      - uses: aws-actions/configure-aws-credentials@v6
+      - name: AWS login + Terraform init (prod, read-only role)
+        uses: ./.github/actions/terraform-env
         with:
-          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/g4-merlion-ci-prod-plan
-          role-session-name: ci-${{ github.run_id }}-${{ github.run_attempt }}
-          aws-region: ${{ env.AWS_REGION }}
+          role: g4-merlion-ci-prod-plan
+          workdir: envs/prod
 
-      - uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: "~1.15"
-          terraform_wrapper: false
-
-      - name: terraform plan (prod)
+      # -detailed-exitcode: 0 = no changes, 2 = changes, 1 = error. Records whether apply prod is needed.
+      - name: Terraform plan (prod)
         id: plan
         working-directory: envs/prod
         run: |
-          set -euo pipefail
-          terraform init -input=false
-          set +e
-          terraform plan -input=false -no-color -lock-timeout=5m -detailed-exitcode -out=prod.tfplan
-          code=$?
-          set -e
+          code=0
+          terraform plan -lock-timeout=5m -detailed-exitcode -out=prod.tfplan || code=$?
           [ "$code" -eq 1 ] && exit 1
           echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Show prod plan in the run summary
+        working-directory: envs/prod
+        run: |
           {
             echo "### Terraform plan: prod"
-            echo "Commit \`${GITHUB_SHA::7}\`. Approve **apply prod** below only if this is what you expect."
+            echo "Commit \`${GITHUB_SHA::7}\`. Approve **apply prod** only if this is what you expect."
             echo '```'
             terraform show -no-color prod.tfplan | tail -c 60000
             echo '```'
@@ -109,7 +99,8 @@ jobs:
 
       # The saved plan (and .terraform.lock.hcl) is what apply-prod applies, so the reviewer approves
       # exactly what runs. The plan can contain sensitive values: short retention, never printed.
-      - uses: actions/upload-artifact@v7
+      - name: Save prod plan for apply prod
+        uses: actions/upload-artifact@v7
         if: steps.plan.outputs.changes == 'true'
         with:
           name: prod-tfplan-${{ github.sha }}
@@ -132,14 +123,14 @@ jobs:
       group: tf-prod
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # whole history: needed to compare this commit with main
 
       # An approval on an old run must not apply: a newer run has the newer plan
       - name: Still the latest commit on main
         run: |
-          set -euo pipefail
           git fetch --quiet origin main
           latest="$(git rev-parse origin/main)"
           if [ "$latest" != "$GITHUB_SHA" ]; then
@@ -147,26 +138,19 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/download-artifact@v8
+      - name: Download the reviewed prod plan
+        uses: actions/download-artifact@v8
         with:
           name: prod-tfplan-${{ github.sha }}
           path: envs/prod
 
-      - uses: aws-actions/configure-aws-credentials@v6
+      - name: AWS login + Terraform init (prod, deploy role)
+        uses: ./.github/actions/terraform-env
         with:
-          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/g4-merlion-ci-prod
-          role-session-name: ci-${{ github.run_id }}-${{ github.run_attempt }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: "~1.15"
-          terraform_wrapper: false
+          role: g4-merlion-ci-prod
+          workdir: envs/prod
 
       # Applies the reviewed plan. If prod changed since the plan, Terraform rejects it as stale.
-      - name: terraform apply (prod, saved plan)
+      - name: Terraform apply (prod, saved plan)
         working-directory: envs/prod
-        run: |
-          set -euo pipefail
-          terraform init -input=false
-          terraform apply -input=false -no-color -lock-timeout=5m prod.tfplan
+        run: terraform apply -lock-timeout=5m prod.tfplan
