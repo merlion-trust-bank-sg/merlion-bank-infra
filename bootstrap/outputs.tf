@@ -13,6 +13,16 @@ output "state_kms_key_arns" {
   value       = { for k, key in aws_kms_key.state : k => key.arn }
 }
 
+output "ci_role_arns" {
+  description = "Role each GitHub workflow assumes (build, plan, staging, prod)"
+  value       = module.iam_ci.role_arns
+}
+
+output "workload_boundary_arns" {
+  description = "Permissions boundary each env must attach to every IAM role it creates"
+  value       = module.iam_ci.workload_boundary_arns
+}
+
 output "github_oidc_provider_arn" {
   description = "For the CI role trust policies in modules/iam-ci"
   value       = data.aws_iam_openid_connect_provider.github.arn

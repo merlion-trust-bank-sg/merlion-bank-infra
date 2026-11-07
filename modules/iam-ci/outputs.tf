@@ -1,9 +1,9 @@
-output "deploy_role_arns" {
-  value = { for k, r in aws_iam_role.deploy : k => r.arn }
+output "role_arns" {
+  description = "Set as the role to assume in each GitHub workflow"
+  value       = { for k, r in aws_iam_role.ci : k => r.arn }
 }
-output "plan_role_arn" {
-  value = var.create_plan_role ? aws_iam_role.plan[0].arn : null
-}
-output "build_role_arn" {
-  value = var.create_build_role ? aws_iam_role.build[0].arn : null
+
+output "workload_boundary_arns" {
+  description = "Permissions boundary each env must attach to every IAM role it creates"
+  value       = { for k, p in aws_iam_policy.workload_boundary : k => p.arn }
 }
