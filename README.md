@@ -21,16 +21,17 @@ a `production` reviewer, applies prod.
 
 ## Bootstrap (once, by an admin)
 
-The state buckets are created by `bootstrap/` itself, so the first apply uses local state:
+Bootstrap is already applied, and its state is in `g4-merlion-bootstrap-tfstate-255945442255`.
+Changes are a normal plan and apply:
 
 ```bash
 export AWS_PROFILE=<profile for account 255945442255>
 cd bootstrap
 terraform init && terraform plan -out=bootstrap.tfplan && terraform apply bootstrap.tfplan
-# uncomment the backend block in bootstrap/backend.tf, then:
-terraform init -migrate-state      # answer "yes"
-rm -f terraform.tfstate terraform.tfstate.backup bootstrap.tfplan
 ```
+
+In a brand-new account the state bucket doesn't exist yet: comment out the block in
+`bootstrap/backend.tf`, apply with local state, uncomment it, then `terraform init -migrate-state`.
 
 State buckets are protected by `prevent_destroy` and a bucket policy that denies `s3:DeleteBucket`
 and `s3:DeleteObjectVersion` to everyone, so they outlive environment teardowns.
