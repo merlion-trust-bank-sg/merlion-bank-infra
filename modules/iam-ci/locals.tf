@@ -5,7 +5,11 @@ locals {
 
   role_names = merge(
     { for e in keys(var.environments) : e => "${local.p}-ci-${e}" },
-    { build = "${local.p}-ci-build", plan = "${local.p}-ci-plan" },
+    {
+      build     = "${local.p}-ci-build"
+      plan      = "${local.p}-ci-plan"
+      prod_plan = "${local.p}-ci-prod-plan"
+    },
   )
 
   # Each env's permissions boundary (created below). Every role the env pipeline creates must carry it.

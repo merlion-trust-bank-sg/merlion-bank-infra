@@ -1,6 +1,14 @@
 # Permissions boundary for every role the env pipeline creates (EKS cluster, nodes, Pod Identity
 # roles). The role's own policies grant access; the boundary caps the maximum it can ever have.
 data "aws_iam_policy_document" "workload_boundary_base" {
+  #checkov:skip=CKV_AWS_1:Permissions boundary, not a grant: Allow * is neutral, the Deny statements set the ceiling
+  #checkov:skip=CKV_AWS_49:Permissions boundary: Allow * only caps; the role's own narrow policies grant access
+  #checkov:skip=CKV_AWS_107:Permissions boundary: grants nothing; credentials access depends on the role's own policies
+  #checkov:skip=CKV_AWS_108:Permissions boundary: grants nothing; state buckets, audit and other env are denied
+  #checkov:skip=CKV_AWS_109:Permissions boundary: all IAM actions are denied by DenyAllIam
+  #checkov:skip=CKV_AWS_110:Permissions boundary: all IAM actions are denied by DenyAllIam, so no escalation
+  #checkov:skip=CKV_AWS_111:Permissions boundary: grants nothing; writes depend on the role's own policies
+  #checkov:skip=CKV_AWS_356:Permissions boundary: Resource * is needed to cap every service; Deny statements narrow it
   statement {
     sid       = "AllowWithinGuardrails"
     actions   = ["*"]

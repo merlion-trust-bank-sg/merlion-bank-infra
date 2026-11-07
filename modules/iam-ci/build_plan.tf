@@ -82,3 +82,52 @@ resource "aws_iam_role_policy" "plan" {
   role   = aws_iam_role.ci["plan"].id
   policy = data.aws_iam_policy_document.plan.json
 }
+
+# --- prod-plan: read-only terraform plan for prod, after merge -------------------------------
+resource "aws_iam_role_policy_attachment" "prod_plan_read_only" {
+  role       = aws_iam_role.ci["prod_plan"].name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+data "aws_iam_policy_document" "prod_plan" {
+  statement {
+    sid       = "ReadProdState"
+    actions   = ["s3:GetObject", "s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.state_buckets["prod"]}", "arn:aws:s3:::${var.state_buckets["prod"]}/*"]
+  }
+
+  statement {
+    sid       = "ProdLockFileOnly"
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["arn:aws:s3:::${var.state_buckets["prod"]}/*.tflock"]
+  }
+
+  statement {
+    sid       = "UseProdStateKey"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = [var.state_kms_key_arns["prod"]]
+  }
+
+  statement {
+    sid     = "DenyOtherStateLogsAndAudit"
+    effect  = "Deny"
+    actions = ["s3:GetObject", "s3:GetObjectVersion"]
+    resources = concat(
+      [for l, b in var.state_buckets : "arn:aws:s3:::${b}/*" if l != "prod"],
+      ["arn:aws:s3:::${local.p}-*-loki/*", "arn:aws:s3:::${local.audit_bucket}/*"],
+    )
+  }
+
+  statement {
+    sid       = "DenyOtherStateKeys"
+    effect    = "Deny"
+    actions   = ["kms:Decrypt"]
+    resources = [for l, k in var.state_kms_key_arns : k if l != "prod"]
+  }
+}
+
+resource "aws_iam_role_policy" "prod_plan" {
+  name   = "plan-prod"
+  role   = aws_iam_role.ci["prod_plan"].id
+  policy = data.aws_iam_policy_document.prod_plan.json
+}

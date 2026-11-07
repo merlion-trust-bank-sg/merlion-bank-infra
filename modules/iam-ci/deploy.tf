@@ -6,6 +6,10 @@ resource "aws_iam_role_policy_attachment" "env_read_only" {
 }
 
 data "aws_iam_policy_document" "deploy" {
+  #checkov:skip=CKV_AWS_356:EC2, ELB, Auto Scaling, KMS and ACM resources get random IDs, so they can't be scoped by name; the env fence and Team denies limit them
+  #checkov:skip=CKV_AWS_109:IAM changes only on own-env roles carrying the env's permissions boundary (IamWithBoundary); broad policies can't be attached
+  #checkov:skip=CKV_AWS_111:Writes are limited to own-env names, or to unscoped services narrowed by the env fence and Team denies
+  #checkov:skip=CKV_AWS_107:No secret reads: only RDS-managed secret create/tag; GetSecretValue is never granted
   for_each = var.environments
 
   # Services whose resources can be scoped by name to this env
