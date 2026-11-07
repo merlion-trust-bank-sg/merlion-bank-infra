@@ -1,6 +1,7 @@
 # Each role can only be assumed by one exact kind of GitHub Actions job (OIDC sub claim, no wildcards)
 #   ci-build    app repo, push to main             push images to ECR
 #   ci-plan     infra repo, pull requests          read-only terraform plan (staging)
+#   ci-prod-plan  infra repo, push/dispatch on main, no environment   read-only terraform plan (prod)
 #   ci-staging  infra repo, environment staging    change staging only
 #   ci-prod     infra repo, environment production, after a reviewer approves   change prod only
 
@@ -12,6 +13,9 @@ locals {
     {
       build = ["repo:${var.github_org}/${var.app_repo}:ref:refs/heads/main"]
       plan  = ["repo:${var.github_org}/${var.infra_repo}:pull_request"]
+      # A job on main WITHOUT an environment gets this sub. Only merged code can plan prod, and the
+      # plan can't change anything; applying it needs ci-prod, behind the production approval.
+      prod_plan = ["repo:${var.github_org}/${var.infra_repo}:ref:refs/heads/main"]
     },
   )
 }

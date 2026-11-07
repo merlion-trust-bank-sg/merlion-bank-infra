@@ -1,0 +1,103 @@
+# Pull requests: every check must pass before merge. Failing checks block the PR (required status checks).
+name: tf-plan
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write       # GitHub OIDC token for AWS
+  pull-requests: write  # post the plan as a PR comment
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  checks:
+    name: secrets, format, lint, security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks (secrets)
+        uses: ./.github/actions/setup-gitleaks
+      - run: gitleaks git --redact --verbose --log-opts="origin/${{ github.base_ref }}..HEAD"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.15"
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform validate
+        run: |
+          set -euo pipefail
+          for dir in bootstrap envs/staging envs/prod; do
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done
+
+      - uses: terraform-linters/setup-tflint@v6
+      - name: tflint
+        run: |
+          tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+          tflint --recursive --config="$GITHUB_WORKSPACE/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Every failed check fails the build (no severity filter, exit code not suppressed).
+      # Accepted exceptions are #checkov:skip comments next to the resource, reviewed in the PR.
+      - name: checkov (IaC security)
+        run: |
+          pip install --quiet checkov==3.4.3
+          checkov -d . --config-file .checkov.yaml
+
+  plan-staging:
+    name: plan staging
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::255945442255:role/g4-merlion-ci-plan
+          role-session-name: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.15"
+          terraform_wrapper: false
+
+      - name: terraform plan (staging)
+        id: plan
+        working-directory: envs/staging
+        run: |
+          set -euo pipefail
+          terraform init -input=false
+          terraform plan -input=false -no-color -lock-timeout=5m -out=staging.tfplan
+          terraform show -no-color staging.tfplan > plan.txt
+
+      - name: Post plan as PR comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('envs/staging/plan.txt', 'utf8');
+            const max = 60000;
+            if (plan.length > max) plan = plan.slice(0, max) + '\n... (truncated, see the run log)';
+            const marker = '<!-- tf-plan-staging -->';
+            const body = `${marker}\n### Terraform plan: staging\nCommit \`${context.sha.slice(0,7)}\`, [run ${context.runId}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>\n\nThe prod plan runs after merge and is approved in the \`production\` environment.`;
+            const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number: context.issue.number });
+            const old = comments.find(c => c.body.includes(marker));
+            if (old) await github.rest.issues.updateComment({ ...context.repo, comment_id: old.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });

@@ -13,12 +13,8 @@ state bucket and KMS key, per-environment CI roles, and IAM guardrails (ADR-002)
 | `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); later ECR, audit trail | admin, once (see below) |
 | `modules/` | kms, network, eks, rds, ecr, secrets, iam-ci, audit, addons | - |
 | `envs/{staging,prod}` | one root per environment, own state bucket and key | **pipeline only** |
-| `.github/workflows/tf-plan.yml` | PR: gitleaks, fmt, tflint, checkov, plan comment | GitHub Actions |
-| `.github/workflows/tf-apply.yml` | main: staging -> approval -> prod | GitHub Actions |
-
-Workflow: `SCRUM-<n>-desc` branch -> PR (all checks + 1 review; CODEOWNERS suggests reviewers) ->
-squash merge -> `tf-apply` applies staging, shows the prod plan, waits for a `production`
-reviewer, applies prod.
+| `.github/workflows/tf-plan.yml` | PR: gitleaks, fmt, validate, tflint, checkov, staging plan comment | GitHub Actions |
+| `.github/workflows/tf-apply.yml` | main: apply staging -> plan prod -> approval -> apply prod | GitHub Actions |
 
 ## CI roles
 
@@ -29,6 +25,7 @@ Each role can be assumed by one exact kind of job (the OIDC `sub` claim):
 |---|---|---|
 | `g4-merlion-ci-build` | `merlion-bank-app`, push to `main` | Push images to the `merlion/*` ECR repos. Nothing else. |
 | `g4-merlion-ci-plan` | `merlion-bank-infra`, pull requests | Read-only `terraform plan` for staging (staging state only) |
+| `g4-merlion-ci-prod-plan` | `merlion-bank-infra`, `main`, job without an environment | Read-only `terraform plan` for prod (prod state only) |
 | `g4-merlion-ci-staging` | `merlion-bank-infra`, GitHub environment `staging` | Change staging resources only |
 | `g4-merlion-ci-prod` | `merlion-bank-infra`, GitHub environment `production`, after a reviewer approves | Change prod resources only |
 
@@ -65,3 +62,45 @@ In a brand-new account the state bucket doesn't exist yet: comment out the block
 
 State buckets are protected by `prevent_destroy` and a bucket policy that denies `s3:DeleteBucket`
 and `s3:DeleteObjectVersion` to everyone, so they outlive environment teardowns.
+
+## Pipeline
+
+From a change on a laptop to production. `bootstrap/` is the only layer applied by hand; everything
+in `envs/` goes through this pipeline.
+
+1. **Branch:** `SCRUM-<n>-<desc>`, linked to the Jira issue.
+2. **Pull request to `main`.** `tf-plan` runs on every push:
+
+   | Check | Fails the PR when |
+   |---|---|
+   | gitleaks | A secret is committed |
+   | `terraform fmt -check` | Code isn't formatted |
+   | `terraform validate` | Invalid configuration in `bootstrap/` or an environment |
+   | tflint | Invalid AWS values, unused declarations, missing versions |
+   | checkov | Any security check fails. Exceptions are `#checkov:skip` comments with a reason, reviewed in the PR. |
+   | `terraform plan` (staging) | Plan errors. The plan is posted as a PR comment for the reviewer. |
+
+3. **Review:** one approval from someone other than the author, all checks green, conversations
+   resolved (enforced by the `main` ruleset). Squash merge.
+4. **`tf-apply` on `main`:**
+   - **apply staging** (`g4-merlion-ci-staging`, GitHub environment `staging`)
+   - **plan prod** (`g4-merlion-ci-prod-plan`, read-only). The plan is shown in the run summary and
+     saved.
+   - **apply prod** waits in the `production` environment until a required reviewer approves, then
+     applies **that saved plan** with `g4-merlion-ci-prod`. Nothing else can change prod.
+
+If prod has no changes, the run ends after the prod plan and asks for no approval.
+
+### When a gate fails
+
+- **A check fails on the PR:** the PR can't be merged. Fix the code and push again; the checks re-run.
+  A checkov finding is fixed or, if it's an accepted risk, skipped next to the resource with a reason
+  that the reviewer has to accept.
+- **Staging apply fails after merge:** prod isn't touched (plan prod needs staging to succeed). Fix
+  in a new PR.
+- **The prod plan looks wrong:** reject the approval. Nothing is applied. Fix in a new PR.
+- **A newer merge arrives while a prod approval is waiting:** approve the newer run. The older run
+  refuses to apply (it isn't the latest commit, and its saved plan would be stale).
+
+Every AWS call from the pipeline uses the role session name `ci-<run id>-<attempt>`, so CloudTrail
+events link back to the GitHub run, its commit and its approver.
