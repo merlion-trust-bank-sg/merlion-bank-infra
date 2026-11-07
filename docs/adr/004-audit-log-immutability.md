@@ -29,7 +29,6 @@ account.
   `s3:BypassGovernanceRetention` to every principal**, so governance retention cannot be bypassed
   without first changing the bucket policy.
 - Changing the bucket policy is itself recorded by CloudTrail, so any weakening is visible.
-- After 30 days, objects transition to S3 Glacier Instant Retrieval (lower cost, still instantly readable).
 - The same bucket holds pipeline deploy records (APP-11) and EKS audit logs, under separate prefixes.
 - Resource names use our group prefix `g4-` (assumption A-3).
 
@@ -41,12 +40,16 @@ account.
 | Versioning + MFA delete only | Simple | MFA delete needs root credentials; deletes still possible | Rejected |
 | CloudWatch Logs only | Easy querying | Retention can be shortened by anyone with logs permissions | Rejected |
 
+**Considered, not implemented:** a lifecycle rule moving logs to S3 Glacier Instant Retrieval after
+30 days would lower storage cost and keep logs instantly readable. Log volume in this project is
+small, so we keep all logs in S3 Standard; a real bank with a year of logs would add it.
+
 ## Consequences
 **Positive**
 - Meets HC-3: logs are retained for 365 days and cannot be deleted or overwritten in normal operation.
 - Meets HC-2: every API call, including `AssumeRoleWithWebIdentity` by the CI roles, is recorded with identity and time.
 - Log file validation (signed digest files) detects altered log files.
-- Storage cost is low (small JSON files, Glacier IR after 30 days).
+- Storage cost is low (small, compressed JSON files).
 
 **Negative / risks**
 - Weaker than compliance mode: someone with permission to edit the bucket policy could remove the
