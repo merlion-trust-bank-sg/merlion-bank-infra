@@ -26,6 +26,21 @@ variable "team" {
   default     = "g4"
 }
 
+variable "github_org" {
+  type    = string
+  default = "merlion-trust-bank-sg"
+}
+
+variable "infra_repo" {
+  type    = string
+  default = "merlion-bank-infra"
+}
+
+variable "app_repo" {
+  type    = string
+  default = "merlion-bank-app"
+}
+
 variable "environments" {
   description = "Environments that get their own state bucket and key"
   type        = list(string)
