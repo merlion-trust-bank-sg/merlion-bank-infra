@@ -31,14 +31,30 @@ variable "github_org" {
   default = "merlion-trust-bank-sg"
 }
 
+# Numeric IDs are part of GitHub's OIDC sub claim. Look up with: gh api orgs/<org> --jq .id
+variable "github_org_id" {
+  type    = string
+  default = "346416510"
+}
+
 variable "infra_repo" {
   type    = string
   default = "merlion-bank-infra"
 }
 
+variable "infra_repo_id" {
+  type    = string
+  default = "1431038820"
+}
+
 variable "app_repo" {
   type    = string
   default = "merlion-bank-app"
+}
+
+variable "app_repo_id" {
+  type    = string
+  default = "1431037109"
 }
 
 variable "environments" {

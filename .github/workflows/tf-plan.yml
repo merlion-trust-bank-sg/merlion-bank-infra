@@ -15,7 +15,7 @@ env:
 
 jobs:
   checks:
-    name: secrets, format, lint, security
+    name: checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history)

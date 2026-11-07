@@ -6,16 +6,22 @@
 #   ci-prod     infra repo, environment production, after a reviewer approves   change prod only
 
 locals {
+  # GitHub's immutable subject format: repo:<org>@<org id>/<repo>@<repo id>. The IDs stop a deleted
+  # and re-created repo (or org) with the same name from assuming these roles.
+  sub_prefix = { for repo, id in var.repo_ids :
+    repo => "repo:${var.github_org}@${var.github_org_id}/${repo}@${id}"
+  }
+
   trust_subjects = merge(
     { for e, gh_env in var.environments :
-      e => [for repo in var.deploy_repos : "repo:${var.github_org}/${repo}:environment:${gh_env}"]
+      e => [for repo in var.deploy_repos : "${local.sub_prefix[repo]}:environment:${gh_env}"]
     },
     {
-      build = ["repo:${var.github_org}/${var.app_repo}:ref:refs/heads/main"]
-      plan  = ["repo:${var.github_org}/${var.infra_repo}:pull_request"]
+      build = ["${local.sub_prefix[var.app_repo]}:ref:refs/heads/main"]
+      plan  = ["${local.sub_prefix[var.infra_repo]}:pull_request"]
       # A job on main WITHOUT an environment gets this sub. Only merged code can plan prod, and the
       # plan can't change anything; applying it needs ci-prod, behind the production approval.
-      prod_plan = ["repo:${var.github_org}/${var.infra_repo}:ref:refs/heads/main"]
+      prod_plan = ["${local.sub_prefix[var.infra_repo]}:ref:refs/heads/main"]
     },
   )
 }
