@@ -29,8 +29,8 @@ Region: **`us-east-1`** (2 AZs: `us-east-1a`, `us-east-1b`) · Environments: **s
 
 | Layer | What we build |
 |---|---|
-| Delivery (outside AWS) | GitHub org `merlion-trust-bank-sg` · branches `SCRUM-<n>-*` · PR to `main` with 1 review · Actions: build → SCA → image scan · Argo CD syncs staging on merge → smoke tests → **production promotion PR, reviewed** · infra: staging plan on every PR, prod plan on `main`, **production approval** before apply |
-| Identity | GitHub OIDC → AWS STS, no stored keys. One role per kind of job (`g4-merlion-ci-build`, `-plan`, `-prod-plan`, `-staging`, `-prod`), each trusting one exact OIDC subject. `ci-staging` can only change staging; `ci-prod` is only issued to the `production` environment, after approval. Environments are kept apart by name and tag denies, their own state bucket and KMS key, and a permissions boundary on every role the pipeline creates |
+| Delivery (outside AWS) | GitHub org `merlion-trust-bank-sg` · branches `SCRUM-<n>-*` · PR to `main` with 1 review · Actions: build → SCA → image scan · image digest auto-promoted to staging (bot PR, auto-merge) → Argo CD syncs → smoke tests → **production promotion PR, approved by someone other than the author** · infra: staging plan on every PR, prod plan on `main`, **production approval** before apply |
+| Identity | GitHub OIDC → AWS STS, no stored keys. One role per kind of job (`g4-merlion-ci-build`, `g4-merlion-ci-plan`, `g4-merlion-ci-prod-plan`, `g4-merlion-ci-staging`, `g4-merlion-ci-prod`), each trusting one exact OIDC subject. `g4-merlion-ci-staging` can only change staging; `g4-merlion-ci-prod` is only issued to the `production` environment, after approval. Environments are kept apart by name and tag denies, their own state bucket and KMS key, and a permissions boundary on every role the pipeline creates |
 | Environments | **Staging** (prod-like but smaller, same Terraform modules, auto-deploy on merge, loadgenerator, scaled down when idle) · **Prod** (same image digest promoted after approval). No dev environment: PR checks give fast feedback (ADR-002) |
 | Network (prod) | VPC across 2 AZs. **Public subnets:** ALB (AWS Load Balancer Controller + ACM cert), NAT gateway. **Private subnets:** EKS. **Isolated DB subnets:** no internet route |
 | Workload | 6 Bank of Anthos services built into our own images: `frontend` (2+ replicas), `userservice` (signs JWTs), `contacts`, `ledgerwriter`, `balancereader`, `transactionhistory` |
@@ -43,7 +43,7 @@ Region: **`us-east-1`** (2 AZs: `us-east-1a`, `us-east-1b`) · Environments: **s
 
 ## 3. Repositories
 
-### 3.1 `merlion-bank-infra` – Terraform + architecture docs
+### 3.1 `merlion-bank-infra` – Terraform, deployment config (Argo CD source), architecture docs
 
 ```
 merlion-bank-infra/
@@ -61,7 +61,7 @@ merlion-bank-infra/
 │   ├── rds/                       # accounts-db, ledger-db
 │   ├── ecr/                       # one repo per service
 │   ├── secrets/                   # Secrets Manager entries (DB creds, JWT key pair)
-│   ├── iam-ci/                    # ci-build/-plan/-prod-plan/-staging/-prod roles, guardrails
+│   ├── iam-ci/                    # g4-merlion-ci-* roles, guardrails
 │   ├── audit/                     # CloudTrail + Object Lock bucket
 │   ├── addons/                    # LB Controller, External Secrets
 │   └── observability/             # Loki S3 bucket + Pod Identity, Helm releases (kube-prometheus-stack,
@@ -70,6 +70,11 @@ merlion-bank-infra/
 ├── envs/
 │   ├── staging/                   # root module, own state bucket + key
 │   └── prod/                      # root module, own state bucket + key
+├── deploy/                        # Argo CD watches this folder
+│   ├── helm/bank-of-anthos/       # OUR chart (upstream manifests = reference only)
+│   │   └── templates/
+│   ├── values-staging.yaml        # staging digest (bot-promoted) + smaller sizes, loadgenerator on
+│   └── values-prod.yaml           # prod digest (reviewed promotion PR)
 ├── docs/
 │   ├── architecture/              # diagram source + PNG
 │   ├── adr/
@@ -81,22 +86,18 @@ merlion-bank-infra/
 └── README.md
 ```
 
-### 3.2 `merlion-bank-app` – application, deployment, operations
+### 3.2 `merlion-bank-app` – application code, images, operations
 
 ```
 merlion-bank-app/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml                 # PR: SCA, build, image scan (fail on HIGH/CRITICAL), gitleaks
-│   │   └── cd.yml                 # main: push image to ECR (ci-build) -> staging promotion PR
+│   │   └── cd.yml                 # main: push image to ECR (g4-merlion-ci-build) -> open staging promotion PR
+│   │                              #   in merlion-bank-infra (GitHub App token, auto-merge)
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
 ├── src/                           # Bank of Anthos upstream source, pinned release tag
-├── deploy/
-│   └── helm/bank-of-anthos/       # OUR chart (upstream manifests = reference only)
-│       ├── templates/
-│       ├── values-staging.yaml
-│       └── values-prod.yaml
 ├── ops/
 │   ├── slo/slo.md                 # SLIs, SLO targets, error budget
 │   ├── runbooks/                  # incident runbook(s)
@@ -114,7 +115,7 @@ merlion-bank-app/
 |---|---|
 | Branch naming | `SCRUM-<n>-<short-desc>`, where `<n>` is the Jira issue number. This links commits and PRs to the Jira SCRUM board automatically. Example: `SCRUM-12-network-module` |
 | Branch protection on `main` | No direct pushes (including admins), PR required, **≥1 approving review**, required status checks pass, conversation resolved |
-| CODEOWNERS | `/modules/{network,eks,iam-ci}/**` → DO1 · `/modules/{rds,ecr,kms,secrets,addons}/**`, `/.github/**` → DO2 · `/modules/observability/**`, `/ops/**` → SRE · `/docs/**`, `/modules/audit/**` → SA |
+| CODEOWNERS | `/modules/{network,eks,iam-ci}/**` → DO1 · `/modules/{rds,ecr,kms,secrets,addons}/**`, `/.github/**` → DO2 · `/modules/observability/**`, `/ops/**` → SRE · `/deploy/**` → DO1, DO2, SRE · `/docs/**`, `/modules/audit/**` → SA |
 | Reviewer | **Never the author**, and preferably from a different role (see "Reviewer" columns) |
 | Commit messages | `SCRUM-<n>: <type>(<scope>): <summary>`. Example: `SCRUM-12: feat(network): add isolated DB subnets` |
 | PR template | What changed · Why · Jira link · `terraform plan` / test evidence · Constraint impact (region / audit / retention / credentials) |
@@ -133,8 +134,8 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 | ID | Task | Owner | Branch | Key files | Depends on | Reviewer |
 |---|---|---|---|---|---|---|
 | INF-01 | Repo setup: branch protection, CODEOWNERS, PR template, `.gitignore`, gitleaks pre-commit, Jira link, README skeleton | DO1 | `SCRUM-<n>-repo-setup` | `.github/*`, `README.md` | – | SA |
-| INF-02 | Bootstrap the shared account: one S3 state bucket and KMS key per layer (bootstrap, staging, prod), versioned, S3 native lockfile (no DynamoDB table); look up the existing GitHub OIDC provider | DO1 | `SCRUM-<n>-bootstrap` | `bootstrap/` | INF-01 | SRE |
-| INF-03 | OIDC roles `g4-merlion-ci-build`, `-plan`, `-prod-plan`, `-staging`, `-prod`. Each trusts one exact `sub` (GitHub's immutable format with org and repo IDs, no wildcards); `ci-prod` trusts only `environment:production`. Least-privilege deploy policy, env fence, permissions boundary, bootstrap protection | DO1 | `SCRUM-<n>-oidc-roles` | `modules/iam-ci/` | INF-02 | SA |
+| INF-02 | Bootstrap the shared account: one S3 state bucket and KMS key per layer (bootstrap, staging, prod), versioned, S3 native lockfile (Terraform ≥ 1.10, no DynamoDB table); look up the existing GitHub OIDC provider | DO1 | `SCRUM-<n>-bootstrap` | `bootstrap/` | INF-01 | SRE |
+| INF-03 | OIDC roles `g4-merlion-ci-build`, `g4-merlion-ci-plan`, `g4-merlion-ci-prod-plan`, `g4-merlion-ci-staging`, `g4-merlion-ci-prod`. Each trusts one exact `sub` (GitHub's immutable format with org and repo IDs, no wildcards); `g4-merlion-ci-prod` trusts only `environment:production`. Least-privilege deploy policy, env fence, permissions boundary, bootstrap protection | DO1 | `SCRUM-<n>-oidc-roles` | `modules/iam-ci/` | INF-02 | SA |
 | INF-04 | KMS module: CMKs for RDS, S3 (state + audit), CloudWatch Logs, Secrets Manager; key policies, rotation on | DO2 | `SCRUM-<n>-kms` | `modules/kms/` | INF-02 | DO1 |
 | INF-05 | Network: VPC across **2 AZs (`us-east-1a`, `us-east-1b`)**. Public subnets (ALB, NAT), private subnets (EKS), **isolated DB subnets with no internet route**, VPC endpoints (ECR, S3, Secrets Manager, Logs, STS). 1 NAT in staging, 1 per AZ in prod | DO1 | `SCRUM-<n>-network` | `modules/network/` | INF-02 | SA |
 | INF-06 | EKS: cluster in private subnets, managed node group, **EKS Pod Identity** (Pod Identity Agent add-on; no per-cluster OIDC provider), control-plane logs **including `audit`** → CloudWatch | DO1 | `SCRUM-<n>-eks` | `modules/eks/` | INF-05 | SRE |
@@ -144,7 +145,7 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 | INF-10 | Audit: CloudTrail in the account (management + data events for audit bucket) → S3 bucket with **Object Lock governance mode, 365 days** (instructor advice), log file validation, bucket policy denying `DeleteObject*` and `s3:BypassGovernanceRetention` to everyone; prefixes for EKS audit logs and pipeline deploy records | SA | `SCRUM-<n>-audit-trail` | `modules/audit/` | INF-04 | DO1 |
 | INF-11 | Region guardrail: `var.region = "us-east-1"` in every env root; deny-other-regions policy on CI roles; CloudTrail alarm on console write events in prod | SA | `SCRUM-<n>-region-guardrail` | `modules/iam-ci/`, `envs/*/providers.tf` | INF-03, INF-10 | DO1 |
 | INF-12 | Env roots `envs/staging`, `envs/prod` wiring all modules. Own state bucket and KMS key per env; staging smaller sizes | DO1 | `SCRUM-<n>-env-roots` | `envs/` | INF-04…10 | DO2 |
-| INF-13 | Infra pipeline. **PR:** gitleaks / fmt / validate / tflint / **checkov (any failure blocks; exceptions as `#checkov:skip` with a reason)** / staging plan (`ci-plan`, read-only). **main:** apply staging (`ci-staging`) → prod plan (`ci-prod-plan`, read-only) → **manual approval** (skipped if no changes) → apply the saved plan (`ci-prod`) | DO2 | `SCRUM-<n>-tf-pipeline` | `.github/workflows/tf-*.yml` | INF-03, INF-12 | DO1 |
+| INF-13 | Infra pipeline. **PR:** gitleaks / fmt / validate / tflint / **checkov (any failure blocks; exceptions as `#checkov:skip` with a reason)** / staging plan (`g4-merlion-ci-plan`, read-only). **main:** apply staging (`g4-merlion-ci-staging`) → prod plan (`g4-merlion-ci-prod-plan`, read-only) → **manual approval** (skipped if no changes) → apply the saved plan (`g4-merlion-ci-prod`) | DO2 | `SCRUM-<n>-tf-pipeline` | `.github/workflows/tf-*.yml` | INF-03, INF-12 | DO1 |
 | INF-14 | Cluster add-ons part 1: **AWS Load Balancer Controller** (Pod Identity), **ACM certificate** for the ALB, **External Secrets Operator** (Pod Identity → Secrets Manager), **Argo CD** (pulls app manifests from Git) | DO2 | `SCRUM-<n>-addons-lb-eso` | `modules/addons/` | INF-06, INF-09 | SRE |
 | INF-15 | Monitoring stack in namespace `monitoring` via Helm (Terraform `helm_release`, pinned chart versions): **kube-prometheus-stack** (Prometheus on EBS PV, node-exporter, kube-state-metrics, Grafana, Alertmanager), **Loki** with chunks in an **S3 bucket in `us-east-1`** (KMS, Pod Identity, compactor retention **365 days**), **Promtail** DaemonSet (or Grafana Alloy, Promtail's successor), **YACE** exporter (Pod Identity, read-only CloudWatch) for ALB 5xx / `TargetResponseTime`. Grafana exposed via ALB ingress with login, admin password from Secrets Manager | SRE | `SCRUM-<n>-monitoring-stack` | `modules/observability/` | INF-06, INF-04, INF-14 | DO2 |
 | INF-16 | Alert routing: **Alertmanager** receivers for **email** (SMTP) and **Telegram** (native `telegram_configs`). Bot token + SMTP creds via External Secrets, never in values files. Alert templates carry metric names and thresholds only, **no customer data**. Include a `Watchdog` / dead-man's-switch alert so a down Prometheus is noticed | SRE | `SCRUM-<n>-alertmanager-routing` | `modules/observability/` | INF-15 | DO2 |
@@ -166,7 +167,7 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 | DOC-09 | ADR-004 Audit log immutability: S3 Object Lock governance mode + denied bypass, 1 year (vs compliance mode) | SA | `SCRUM-<n>-adr-004-audit` | DO1 |
 | DOC-10 | ADR-005 Credentials: GitHub OIDC, one role per kind of job with an exact `sub`, no static keys | DO1 | `SCRUM-<n>-adr-005-oidc` | DO2 |
 | DOC-11 | ADR-006 Region: `us-east-1` per instructor directive (deviation from the brief, approval recorded, region parameterised) | SA | `SCRUM-<n>-adr-006-region` | SRE |
-| DOC-12 | ADR-007 Image promotion: build once, promote the same digest staging → prod through Argo CD promotion PRs (vs push CD from the app repo) | DO2 | `SCRUM-<n>-adr-007-promotion` | DO1 |
+| DOC-12 | ADR-007 Image promotion: build once, promote the same digest; staging auto (GitHub App PR + auto-merge), prod by reviewed PR; deployment config in `merlion-bank-infra/deploy/` (vs push CD from the app repo, vs Argo CD Image Updater + separate config repo) | DO2 | `SCRUM-<n>-adr-007-promotion` | DO1 |
 
 ### 5.3 `merlion-bank-app`
 
@@ -178,11 +179,11 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 | APP-04 | **Security gate 1 – SCA:** Trivy `fs` / OWASP dependency-check on Python + Java deps, **fail on HIGH/CRITICAL**, exit code not suppressed | DO2 | `SCRUM-<n>-sca-gate` | `ci.yml` | APP-03 | SRE |
 | APP-05 | **Security gate 2 – image scan:** Trivy image `--exit-code 1 --severity HIGH,CRITICAL`, blocks push to ECR | DO2 | `SCRUM-<n>-image-scan-gate` | `ci.yml`, `security/.trivyignore` | APP-03 | SRE |
 | APP-06 | Secret scanning: gitleaks in CI | DO1 | `SCRUM-<n>-gitleaks` | `ci.yml` | APP-01 | DO2 |
-| APP-07 | Helm chart (our own): 6 Deployments + Services, **`frontend` ≥ 2 replicas**, probes, requests/limits, PDBs, HPA on `frontend`. Ingress `ingressClassName: alb` with ACM cert and HTTPS 443. DB endpoints → RDS over TLS | DO1 | `SCRUM-<n>-helm-chart` | `deploy/helm/` | APP-03, INF-07, INF-14 | DO2 |
-| APP-08 | Secrets wiring: `ExternalSecret` objects for DB creds + JWT key pair → Kubernetes Secrets → pods. Nothing in values files or images | DO1 | `SCRUM-<n>-external-secrets` | `deploy/helm/templates/externalsecret.yaml` | APP-07, INF-09, INF-14 | SRE |
-| APP-09 | Env values: `values-staging` (smaller, `loadgenerator` on), `values-prod` | DO1 | `SCRUM-<n>-env-values` | `deploy/helm/values-*.yaml` | APP-07 | SA |
-| APP-10 | CD pipeline (GitOps): merge to `main` → build + gates → push to ECR (`ci-build`) → PR that bumps the staging digest → Argo CD syncs **staging** → smoke tests → promotion PR with the **same digest** for **prod**, reviewed and merged → Argo CD syncs prod | DO2 | `SCRUM-<n>-cd-pipeline` | `cd.yml` | APP-05, APP-09, INF-03, INF-14 | DO1 |
-| APP-11 | Deploy audit record: on every prod deploy, the pipeline writes `{actor, approver, PR, commit SHA, image digest, env, timestamp}` to the Object Lock bucket | SA | `SCRUM-<n>-deploy-audit` | `cd.yml` | APP-10, INF-10 | DO2 |
+| APP-07 | Helm chart (our own): 6 Deployments + Services, **`frontend` ≥ 2 replicas**, probes, requests/limits, PDBs, HPA on `frontend`. Ingress `ingressClassName: alb` with ACM cert and HTTPS 443. DB endpoints → RDS over TLS | DO1 | `SCRUM-<n>-helm-chart` | `merlion-bank-infra`: `deploy/helm/` | APP-03, INF-07, INF-14 | DO2 |
+| APP-08 | Secrets wiring: `ExternalSecret` objects for DB creds + JWT key pair → Kubernetes Secrets → pods. Nothing in values files or images | DO1 | `SCRUM-<n>-external-secrets` | `merlion-bank-infra`: `deploy/helm/templates/externalsecret.yaml` | APP-07, INF-09, INF-14 | SRE |
+| APP-09 | Env values: `values-staging` (smaller, `loadgenerator` on), `values-prod` | DO1 | `SCRUM-<n>-env-values` | `merlion-bank-infra`: `deploy/values-*.yaml` | APP-07 | SA |
+| APP-10 | CD pipeline (GitOps): merge to `main` → build + gates → push to ECR (`g4-merlion-ci-build`) → a GitHub App opens a PR in `merlion-bank-infra` changing only the staging digest, with **auto-merge** (required check: bot author + staging digest line only; the App bypasses the review rule, PRs only) → Argo CD syncs **staging** → smoke tests → a PR with the **same digest** for **prod** opens automatically → **approved by anyone other than the author** → Argo CD syncs prod. Argo CD Image Updater rejected (Git write key in the cluster); see ADR-007 | DO2 | `SCRUM-<n>-cd-pipeline` | `cd.yml`; `merlion-bank-infra`: `.github/workflows/promote-*.yml` | APP-05, APP-09, INF-03, INF-14 | DO1 |
+| APP-11 | Deploy audit record: when a promotion PR merges to `main` in `merlion-bank-infra`, a workflow (`g4-merlion-ci-staging` / `g4-merlion-ci-prod`, write-only to `deploys/<env>/`) writes `{actor, approver, PR, commit SHA, image digest, env, timestamp}` to the Object Lock bucket. Argo CD sync history is extra evidence | SA | `SCRUM-<n>-deploy-audit` | `merlion-bank-infra`: `.github/workflows/deploy-record.yml` | APP-10, INF-10 | DO2 |
 | APP-12 | Pipeline README: SCRUM branch → PR → staging → prod; approvals; **what happens when a security gate fails**; CI-log hygiene note | DO2 | `SCRUM-<n>-pipeline-readme` | `README.md` | APP-10 | SA |
 | APP-13 | Logging check: all 6 services log to stdout, visible in Loki per service (`{namespace="bank", app="<service>"}`). Save LogQL queries (errors per service, failed logins, ledger write failures) | SRE | `SCRUM-<n>-log-queries` | `ops/queries/` | APP-10, INF-15 | DO1 |
 | APP-14 | SLIs and SLOs: **availability** = 1 − ALB 5xx ratio (target 99.9%); **p95 latency** = ALB `TargetResponseTime` p95 (target < 500 ms). Justification + error budget | SRE | `SCRUM-<n>-slo` | `ops/slo/slo.md` | APP-13 | SA |
@@ -226,8 +227,8 @@ Each member also **reviews** roughly 10–12 PRs, so the review history shows cr
 | **Data residency** (one approved region: `us-east-1` per instructor) | INF-05/07 (VPC, RDS, backups in-region, no cross-region copy), INF-11 (region pin + deny), INF-15 (self-hosted Loki/Prometheus, Loki chunks in S3 `us-east-1`, no SaaS), CI-log hygiene rule | `terraform state show` region, RDS backup config, Loki bucket region, ADR-003, ADR-006 |
 | **Auditability** (every prod change traceable) | Branch protection + SCRUM links (INF-01/APP-01), plan on PR (INF-13), prod approval (INF-13 `production` environment, APP-10 promotion PR), deploy record (APP-11), CloudTrail incl. OIDC role sessions (INF-10) | Jira ticket → PR → reviewer → Actions run → approver → deploy record → CloudTrail `AssumeRoleWithWebIdentity` event |
 | **Audit log retention 1 yr, tamper-proof** | INF-10 Object Lock **governance mode** 365 days; deletes and `BypassGovernanceRetention` denied to everyone in the bucket policy | Bucket Object Lock config, a failed `DeleteObject` attempt, ADR-004 |
-| No console changes to prod | INF-03 (`ci-prod` only from the `production` environment), INF-11 (console-write alarm) | IAM trust policy, CloudTrail query |
-| Credential separation | INF-03 one role per kind of job, env fence and permissions boundary; the app repo only gets `ci-build` | `ci-staging` trying a prod action → `AccessDenied` (IAM policy simulator) |
+| No console changes to prod | INF-03 (`g4-merlion-ci-prod` only from the `production` environment), INF-11 (console-write alarm) | IAM trust policy, CloudTrail query |
+| Credential separation | INF-03 one role per kind of job, env fence and permissions boundary; the app repo only gets `g4-merlion-ci-build` | `g4-merlion-ci-staging` trying a prod action → `AccessDenied` (IAM policy simulator) |
 | Security gates block | APP-04, APP-05, INF-13 checkov | Demo PR with a failing scan (APP-16) |
 
 ---
