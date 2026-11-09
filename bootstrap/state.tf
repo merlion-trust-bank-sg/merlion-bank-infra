@@ -22,9 +22,9 @@ resource "aws_s3_bucket" "state" {
 }
 
 resource "aws_s3_bucket_versioning" "state" {
-  for_each = aws_s3_bucket.state
+  for_each = local.state_layers
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.state[each.key].id
   versioning_configuration {
     status = "Enabled"
   }
@@ -33,9 +33,9 @@ resource "aws_s3_bucket_versioning" "state" {
 # Bucket default only. The S3 backend sends its own encryption setting on every upload, so each
 # backend block must also set kms_key_id to the same key (otherwise it uploads with AES256).
 resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
-  for_each = aws_s3_bucket.state
+  for_each = local.state_layers
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.state[each.key].id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
@@ -46,9 +46,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
 }
 
 resource "aws_s3_bucket_public_access_block" "state" {
-  for_each = aws_s3_bucket.state
+  for_each = local.state_layers
 
-  bucket                  = each.value.id
+  bucket                  = aws_s3_bucket.state[each.key].id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
@@ -56,18 +56,18 @@ resource "aws_s3_bucket_public_access_block" "state" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "state" {
-  for_each = aws_s3_bucket.state
+  for_each = local.state_layers
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.state[each.key].id
   rule {
     object_ownership = "BucketOwnerEnforced"
   }
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "state" {
-  for_each = aws_s3_bucket.state
+  for_each = local.state_layers
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.state[each.key].id
   rule {
     id     = "expire-old-state-versions"
     status = "Enabled"
@@ -82,13 +82,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "state" {
 }
 
 data "aws_iam_policy_document" "state_bucket" {
-  for_each = aws_s3_bucket.state
+  for_each = local.state_layers
 
   statement {
     sid       = "DenyInsecureTransport"
     effect    = "Deny"
     actions   = ["s3:*"]
-    resources = [each.value.arn, "${each.value.arn}/*"]
+    resources = [aws_s3_bucket.state[each.key].arn, "${aws_s3_bucket.state[each.key].arn}/*"]
     principals {
       type        = "*"
       identifiers = ["*"]
@@ -107,7 +107,7 @@ data "aws_iam_policy_document" "state_bucket" {
     sid       = "DenyStateDeletion"
     effect    = "Deny"
     actions   = ["s3:DeleteBucket", "s3:DeleteObjectVersion"]
-    resources = [each.value.arn, "${each.value.arn}/*"]
+    resources = [aws_s3_bucket.state[each.key].arn, "${aws_s3_bucket.state[each.key].arn}/*"]
     principals {
       type        = "*"
       identifiers = ["*"]
@@ -116,9 +116,9 @@ data "aws_iam_policy_document" "state_bucket" {
 }
 
 resource "aws_s3_bucket_policy" "state" {
-  for_each = aws_s3_bucket.state
+  for_each = local.state_layers
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.state[each.key].id
   policy = data.aws_iam_policy_document.state_bucket[each.key].json
 
   depends_on = [aws_s3_bucket_public_access_block.state]
