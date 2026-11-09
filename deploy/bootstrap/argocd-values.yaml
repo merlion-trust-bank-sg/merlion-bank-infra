@@ -1,0 +1,10 @@
+# Argo CD itself, installed by deploy/bootstrap/bootstrap.sh. Only what we use: no SSO (Dex), no
+# notifications, single replicas. The ApplicationSet controller stays: the add-ons are ApplicationSets.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+configs:
+  params:
+    # Reached with kubectl port-forward for now; TLS comes with the ALB in front of it
+    server.insecure: true

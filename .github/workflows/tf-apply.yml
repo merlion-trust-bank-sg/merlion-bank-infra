@@ -48,6 +48,11 @@ jobs:
         working-directory: envs/staging
         run: terraform apply -lock-timeout=5m staging.tfplan
 
+      # Terraform can't install into a cluster it creates in the same run, so Argo CD is installed here;
+      # Argo CD then installs the add-ons from deploy/platform/staging. Re-running it changes nothing.
+      - name: Bootstrap Argo CD (staging)
+        run: deploy/bootstrap/bootstrap.sh staging
+
   plan-prod:
     name: plan prod
     needs: apply-staging
