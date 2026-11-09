@@ -50,7 +50,7 @@ features are not in scope; the platform around it is.
 |---|---|
 | A-1 | Region `us-east-1` replaces `ap-southeast-1` per instructor; region is one Terraform variable |
 | A-2 | Synthetic / sample data only; no real customer data |
-| A-3 | The platform runs in one AWS training account shared with other groups. Resources carry our group prefix `g4-`; staging and production are separated by `Environment` tag, Terraform state key and per-environment CI role (ADR-002) |
+| A-3 | The platform runs in one AWS training account shared with other groups. Resources carry our group prefix `g4-`; staging and production are separated by their own Terraform state bucket and KMS key, per-environment CI roles, an `Environment`-tag and name-based IAM fence, and a permissions boundary on every role the pipeline creates (ADR-002) |
 | A-4 | Bank of Anthos source is used unmodified apart from configuration needed to reach RDS |
 | A-5 | GitHub-hosted runners are used; CI output contains no customer data or application logs |
 
