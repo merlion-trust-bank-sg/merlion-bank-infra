@@ -1,0 +1,101 @@
+# Pull requests: every check must pass before merge. Failing checks block the PR (required status checks).
+name: tf-plan
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC token for AWS
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # whole history: needed to compare this commit with main
+
+      - name: Install gitleaks
+        uses: ./.github/actions/setup-gitleaks
+
+      # Only this PR's commits; --redact keeps any secret out of the log
+      - name: Gitleaks (secrets)
+        run: gitleaks git --redact --verbose --log-opts="origin/${{ github.base_ref }}..HEAD"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.15"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      # -backend=false: validate only needs providers and modules, not state or AWS credentials
+      - name: Terraform init (bootstrap, no backend)
+        working-directory: bootstrap
+        run: terraform init -backend=false
+
+      - name: Terraform validate (bootstrap)
+        working-directory: bootstrap
+        run: terraform validate
+
+      - name: Terraform init (staging, no backend)
+        working-directory: envs/staging
+        run: terraform init -backend=false
+
+      - name: Terraform validate (staging)
+        working-directory: envs/staging
+        run: terraform validate
+
+      - name: Terraform init (prod, no backend)
+        working-directory: envs/prod
+        run: terraform init -backend=false
+
+      - name: Terraform validate (prod)
+        working-directory: envs/prod
+        run: terraform validate
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+
+      - name: TFLint init (downloads the AWS ruleset)
+        run: tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: TFLint
+        run: tflint --recursive --config="$GITHUB_WORKSPACE/.tflint.hcl"
+
+      # Every failed check fails the build (no severity filter, exit code not suppressed).
+      # Accepted exceptions are #checkov:skip comments next to the resource, reviewed in the PR.
+      - name: Install Checkov
+        run: pip install --quiet checkov==3.4.3
+
+      - name: Checkov (IaC security)
+        run: checkov -d . --config-file .checkov.yaml
+
+  plan-staging:
+    name: plan staging
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: AWS login + Terraform init (staging, read-only role)
+        uses: ./.github/actions/terraform-env
+        with:
+          role: g4-merlion-ci-plan
+          workdir: envs/staging
+
+      - name: Terraform plan (staging)
+        working-directory: envs/staging
+        run: terraform plan -lock-timeout=5m -out=staging.tfplan

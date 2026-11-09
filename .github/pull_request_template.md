@@ -6,8 +6,8 @@
 SCRUM-<n>: https://<your-site>.atlassian.net/browse/SCRUM-<n>
 
 ## Evidence
-- [ ] `tf-plan` comment on this PR reviewed (dev / staging / prod)
-- [ ] fmt, tflint, checkov, gitleaks green
+- [ ] `tf-plan` checks green: gitleaks, fmt, validate, tflint, checkov
+- [ ] `plan staging` job log reviewed; prod is planned on `main` after merge
 
 ## Constraint impact
 - Region (everything stays in `var.region` = us-east-1):

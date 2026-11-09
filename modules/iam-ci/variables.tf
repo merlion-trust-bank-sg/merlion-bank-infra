@@ -21,12 +21,22 @@ variable "github_org" {
   type = string
 }
 
+variable "github_org_id" {
+  description = "Numeric ID of the GitHub org. GitHub puts it in the OIDC sub claim."
+  type        = string
+}
+
 variable "infra_repo" {
   type = string
 }
 
 variable "app_repo" {
   type = string
+}
+
+variable "repo_ids" {
+  description = "Repo name => numeric GitHub repo ID, for every repo that assumes a role"
+  type        = map(string)
 }
 
 variable "oidc_provider_arn" {
@@ -47,6 +57,11 @@ variable "environments" {
 variable "deploy_repos" {
   description = "Repos whose staging/production jobs may assume the deploy roles"
   type        = list(string)
+
+  validation {
+    condition     = alltrue([for r in var.deploy_repos : contains(keys(var.repo_ids), r)])
+    error_message = "Every deploy repo needs an entry in repo_ids."
+  }
 }
 
 variable "state_buckets" {

@@ -2,13 +2,18 @@
 module "iam_ci" {
   source = "../modules/iam-ci"
 
-  region            = var.region
-  account_id        = var.account_id
-  prefix            = local.prefix
-  team              = var.team
-  github_org        = var.github_org
-  infra_repo        = var.infra_repo
-  app_repo          = var.app_repo
+  region        = var.region
+  account_id    = var.account_id
+  prefix        = local.prefix
+  team          = var.team
+  github_org    = var.github_org
+  github_org_id = var.github_org_id
+  infra_repo    = var.infra_repo
+  app_repo      = var.app_repo
+  repo_ids = {
+    (var.infra_repo) = var.infra_repo_id
+    (var.app_repo)   = var.app_repo_id
+  }
   oidc_provider_arn = data.aws_iam_openid_connect_provider.github.arn
 
   # Terraform env name => GitHub Environment name

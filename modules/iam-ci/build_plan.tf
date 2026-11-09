@@ -31,31 +31,44 @@ resource "aws_iam_role_policy" "build" {
   policy = data.aws_iam_policy_document.build.json
 }
 
-# --- plan: read-only terraform plan for staging on infra PRs -----------------------------------
-# Only staging state: prod's plan runs in the approval-gated prod job, as ci-prod, just before apply.
+# --- plan roles: read-only terraform plan, one environment each ----------------------------------
+#   g4-merlion-ci-plan       staging, on infra PRs
+#   g4-merlion-ci-prod-plan  prod, on main after merge (before the production approval)
+# ReadOnlyAccess for the plan itself; state, lock file and key access only for the role's own env.
+locals {
+  plan_roles = {
+    plan      = { env = "staging", sid = "Staging", policy_name = "plan-staging" }
+    prod_plan = { env = "prod", sid = "Prod", policy_name = "plan-prod" }
+  }
+}
+
 resource "aws_iam_role_policy_attachment" "plan_read_only" {
-  role       = aws_iam_role.ci["plan"].name
+  for_each = local.plan_roles
+
+  role       = aws_iam_role.ci[each.key].name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
 data "aws_iam_policy_document" "plan" {
+  for_each = local.plan_roles
+
   statement {
-    sid       = "ReadStagingState"
+    sid       = "Read${each.value.sid}State"
     actions   = ["s3:GetObject", "s3:ListBucket"]
-    resources = ["arn:aws:s3:::${var.state_buckets["staging"]}", "arn:aws:s3:::${var.state_buckets["staging"]}/*"]
+    resources = ["arn:aws:s3:::${var.state_buckets[each.value.env]}", "arn:aws:s3:::${var.state_buckets[each.value.env]}/*"]
   }
 
   # plan takes the state lock, so allow only the lock file; state itself stays read-only
   statement {
-    sid       = "StagingLockFileOnly"
+    sid       = "${each.value.sid}LockFileOnly"
     actions   = ["s3:PutObject", "s3:DeleteObject"]
-    resources = ["arn:aws:s3:::${var.state_buckets["staging"]}/*.tflock"]
+    resources = ["arn:aws:s3:::${var.state_buckets[each.value.env]}/*.tflock"]
   }
 
   statement {
-    sid       = "UseStagingStateKey"
+    sid       = "Use${each.value.sid}StateKey"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
-    resources = [var.state_kms_key_arns["staging"]]
+    resources = [var.state_kms_key_arns[each.value.env]]
   }
 
   # ReadOnlyAccess can read every bucket. Keep the plan role out of other state, app logs and the audit trail.
@@ -64,7 +77,7 @@ data "aws_iam_policy_document" "plan" {
     effect  = "Deny"
     actions = ["s3:GetObject", "s3:GetObjectVersion"]
     resources = concat(
-      [for l, b in var.state_buckets : "arn:aws:s3:::${b}/*" if l != "staging"],
+      [for l, b in var.state_buckets : "arn:aws:s3:::${b}/*" if l != each.value.env],
       ["arn:aws:s3:::${local.p}-*-loki/*", "arn:aws:s3:::${local.audit_bucket}/*"],
     )
   }
@@ -73,12 +86,35 @@ data "aws_iam_policy_document" "plan" {
     sid       = "DenyOtherStateKeys"
     effect    = "Deny"
     actions   = ["kms:Decrypt"]
-    resources = [for l, k in var.state_kms_key_arns : k if l != "staging"]
+    resources = [for l, k in var.state_kms_key_arns : k if l != each.value.env]
   }
 }
 
 resource "aws_iam_role_policy" "plan" {
-  name   = "plan-staging"
-  role   = aws_iam_role.ci["plan"].id
-  policy = data.aws_iam_policy_document.plan.json
+  for_each = local.plan_roles
+
+  name   = each.value.policy_name
+  role   = aws_iam_role.ci[each.key].id
+  policy = data.aws_iam_policy_document.plan[each.key].json
+}
+
+# These resources were written out once per role; the moves keep them in place (no AWS change)
+moved {
+  from = aws_iam_role_policy_attachment.plan_read_only
+  to   = aws_iam_role_policy_attachment.plan_read_only["plan"]
+}
+
+moved {
+  from = aws_iam_role_policy_attachment.prod_plan_read_only
+  to   = aws_iam_role_policy_attachment.plan_read_only["prod_plan"]
+}
+
+moved {
+  from = aws_iam_role_policy.plan
+  to   = aws_iam_role_policy.plan["plan"]
+}
+
+moved {
+  from = aws_iam_role_policy.prod_plan
+  to   = aws_iam_role_policy.plan["prod_plan"]
 }
