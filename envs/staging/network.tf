@@ -9,7 +9,7 @@ module "network" {
   single_nat_gateway         = true
   enable_interface_endpoints = false
 
-  logs_kms_key_arn = aws_kms_key.logs.arn
+  logs_kms_key_arn = module.logs_key.arn
 
   # Created by bootstrap; every role this pipeline creates must carry it
   permissions_boundary_arn = "arn:aws:iam::${var.account_id}:policy/${local.name}-workload-boundary"
