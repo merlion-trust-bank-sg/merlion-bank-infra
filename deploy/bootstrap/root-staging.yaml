@@ -1,0 +1,20 @@
+# "App of apps": Argo CD reads deploy/platform/staging from main and creates every resource in it.
+# The repo is public, so no credentials are needed and the cluster has no access to GitHub.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/merlion-trust-bank-sg/merlion-bank-infra
+    targetRevision: main
+    path: deploy/platform/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
