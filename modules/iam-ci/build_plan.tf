@@ -32,7 +32,7 @@ resource "aws_iam_role_policy" "build" {
 }
 
 # --- plan: read-only terraform plan for staging on infra PRs -----------------------------------
-# Only staging state: prod's plan runs in the approval-gated prod job, as ci-prod, just before apply.
+# Only staging state: prod is planned on main by g4-merlion-ci-prod-plan (read-only, prod state only).
 resource "aws_iam_role_policy_attachment" "plan_read_only" {
   role       = aws_iam_role.ci["plan"].name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
