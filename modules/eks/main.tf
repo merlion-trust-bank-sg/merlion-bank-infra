@@ -18,6 +18,7 @@ resource "aws_cloudwatch_log_group" "cluster" {
 resource "aws_eks_cluster" "this" {
   #checkov:skip=CKV_AWS_39:Public endpoint is needed: GitHub-hosted runners (Helm releases) have no fixed IPs. Every call still needs IAM auth and an access entry
   #checkov:skip=CKV_AWS_38:Same reason; the allowed CIDRs are set per env (public_access_cidrs)
+  #checkov:skip=CKV_AWS_339:Its hard-coded version list (unchanged since Mar 2026) stops at 1.35; 1.37 is in EKS standard support
   name     = var.name
   version  = var.kubernetes_version
   role_arn = aws_iam_role.this["cluster"].arn
