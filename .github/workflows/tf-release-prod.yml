@@ -1,0 +1,168 @@
+# Prod release: started by hand from main. Plans prod, waits for a production reviewer, applies exactly
+# that plan, and tags the commit. Merges only update staging (tf-apply.yml); prod changes only here.
+#
+#   plan-prod   no environment          g4-merlion-ci-prod-plan   read-only; plan and release notes shown,
+#                                                                 plan saved as artifact
+#   apply-prod  environment production  g4-merlion-ci-prod        waits for approval, applies the saved
+#                                                                 plan, tags the release prod-<UTC time>
+#
+# A release includes every commit on main since the previous prod-* tag. The run summary lists them,
+# so the reviewer sees exactly what the one approval covers.
+name: tf-release-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: What this release is for (shown to the approver and in the release tag)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  plan-prod:
+    name: plan prod
+    # The Run button lets anyone pick any branch; a release only ever comes from main
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # No environment on purpose: this job's OIDC sub is ref:refs/heads/main, which only the read-only
+    # ci-prod-plan role trusts. Approval happens once, on apply-prod, with this plan in front of the reviewer.
+    steps:
+      - name: Checkout (full history and tags)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # whole history and tags: needed for the latest-commit check and the release notes
+
+      # Never release an old commit: it would plan prod back to older code
+      - name: Only the latest commit on main
+        run: |
+          git fetch --quiet origin main
+          latest="$(git rev-parse origin/main)"
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "::error::This run is for ${GITHUB_SHA::7} but main is now ${latest::7}. Start a new release instead."
+            exit 1
+          fi
+
+      - name: AWS login + Terraform init (prod, read-only role)
+        uses: ./.github/actions/terraform-env
+        with:
+          role: g4-merlion-ci-prod-plan
+          workdir: envs/prod
+
+      # -detailed-exitcode: 0 = no changes, 2 = changes, 1 = error. Records whether apply prod is needed.
+      - name: Terraform plan (prod)
+        id: plan
+        working-directory: envs/prod
+        run: |
+          code=0
+          terraform plan -lock-timeout=5m -detailed-exitcode -out=prod.tfplan || code=$?
+          [ "$code" -eq 1 ] && exit 1
+          echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      # What the reviewer approves: the reason, the commits since the last release, and the plan
+      - name: Release notes and prod plan in the run summary
+        working-directory: envs/prod
+        env:
+          REASON: ${{ inputs.reason }}
+        run: |
+          last="$(git describe --tags --match 'prod-*' --abbrev=0 2>/dev/null || true)"
+          {
+            echo "### Prod release: ${REASON}"
+            echo "Started by @${GITHUB_ACTOR} at commit \`${GITHUB_SHA::7}\`."
+            echo
+            if [ -n "$last" ]; then
+              echo "#### Changes since the last release (\`${last}\`)"
+              echo '```'
+              git log --oneline --first-parent "${last}..HEAD"
+              echo '```'
+            else
+              echo "#### First release: everything on main up to this commit"
+            fi
+            echo
+            echo "#### Terraform plan"
+            echo "Approve **apply prod** only if this is what you expect."
+            echo '```'
+            terraform show -no-color prod.tfplan | tail -c 60000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The saved plan (and .terraform.lock.hcl) is what apply-prod applies, so the reviewer approves
+      # exactly what runs. The plan can contain sensitive values: short retention, never printed.
+      - name: Save prod plan for apply prod
+        uses: actions/upload-artifact@v7
+        if: steps.plan.outputs.changes == 'true'
+        with:
+          name: prod-tfplan-${{ github.sha }}
+          path: |
+            envs/prod/prod.tfplan
+            envs/prod/.terraform.lock.hcl
+          retention-days: 3
+          if-no-files-found: error
+
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+
+  apply-prod:
+    name: apply prod
+    needs: plan-prod
+    if: needs.plan-prod.outputs.changes == 'true'
+    runs-on: ubuntu-latest
+    environment: production # required reviewers: GitHub pauses here until someone approves
+    concurrency:
+      group: tf-prod
+      cancel-in-progress: false
+    # Only to push the release tag. The job runs only after a production reviewer has approved.
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # whole history: needed to compare this commit with main
+
+      # An approval on an old release must not apply: a newer commit on main needs a new release
+      - name: Still the latest commit on main
+        run: |
+          git fetch --quiet origin main
+          latest="$(git rev-parse origin/main)"
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "::error::main moved to ${latest::7} after this plan. Start a new release instead."
+            exit 1
+          fi
+
+      - name: Download the reviewed prod plan
+        uses: actions/download-artifact@v8
+        with:
+          name: prod-tfplan-${{ github.sha }}
+          path: envs/prod
+
+      - name: AWS login + Terraform init (prod, deploy role)
+        uses: ./.github/actions/terraform-env
+        with:
+          role: g4-merlion-ci-prod
+          workdir: envs/prod
+
+      # Applies the reviewed plan. If prod changed since the plan, Terraform rejects it as stale.
+      - name: Terraform apply (prod, saved plan)
+        working-directory: envs/prod
+        run: terraform apply -lock-timeout=5m prod.tfplan
+
+      # Marks what prod runs now; the next release lists the commits after this tag
+      - name: Tag the release
+        env:
+          REASON: ${{ inputs.reason }}
+        run: |
+          tag="prod-$(date -u +%Y%m%d-%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "${REASON}" -m "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          git push origin "$tag"
+          echo "Released as \`$tag\`." >> "$GITHUB_STEP_SUMMARY"
