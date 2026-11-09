@@ -17,3 +17,21 @@ module "logs_key" {
     }]
   }]
 }
+
+# RDS storage, snapshots and backups. RDS uses it through grants made by the caller, so the key
+# policy only needs the default account statement.
+module "rds_key" {
+  source = "../../modules/kms"
+
+  name        = "${local.name}-rds"
+  description = "${local.name} RDS storage and snapshots"
+}
+
+# Secrets Manager secrets (RDS master passwords now, the app's JWT key pair later). Kept apart from
+# the RDS key, so reading a password and reading database storage need different permissions.
+module "secretsmanager_key" {
+  source = "../../modules/kms"
+
+  name        = "${local.name}-secretsmanager"
+  description = "${local.name} Secrets Manager secrets"
+}
