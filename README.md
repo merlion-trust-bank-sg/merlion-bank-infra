@@ -10,7 +10,7 @@ state bucket and KMS key, per-environment CI roles, and IAM guardrails (ADR-002)
 
 | Path | What | Applied by |
 |---|---|---|
-| `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); later ECR, audit trail | admin, once (see below) |
+| `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); audit trail (`modules/audit`, ADR-004); later ECR | admin, once (see below) |
 | `modules/` | kms, network, eks, rds, ecr, secrets, iam-ci, audit, addons | - |
 | `envs/{staging,prod}` | one root per environment, own state bucket and key | **pipeline only** |
 | `.github/workflows/tf-plan.yml` | PR: gitleaks, fmt, validate, tflint, checkov, staging plan | GitHub Actions |
