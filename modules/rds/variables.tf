@@ -19,9 +19,9 @@ variable "db_subnet_group_name" {
   type        = string
 }
 
-variable "allowed_security_group_ids" {
-  description = "Security groups that may connect on 5432, e.g. the EKS cluster security group"
-  type        = list(string)
+variable "allowed_security_groups" {
+  description = "Security groups that may connect on 5432, by a fixed name, e.g. { eks_cluster = <sg id> }. The names are the rules' keys, so they must be known before apply; the IDs can come from other resources."
+  type        = map(string)
 }
 
 variable "engine_version" {

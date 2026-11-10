@@ -9,14 +9,16 @@ resource "aws_security_group" "db" {
 
 # No egress rules: the databases only answer connections, they never start them
 resource "aws_vpc_security_group_ingress_rule" "postgres" {
-  for_each = toset(var.allowed_security_group_ids)
+  # Keyed by name, not by ID: the IDs don't exist until the groups are created, and for_each keys
+  # must be known at plan time (e.g. on a fresh environment)
+  for_each = var.allowed_security_groups
 
   security_group_id            = aws_security_group.db.id
   referenced_security_group_id = each.value
   ip_protocol                  = "tcp"
   from_port                    = 5432
   to_port                      = 5432
-  description                  = "PostgreSQL from EKS"
+  description                  = "PostgreSQL from ${each.key}"
 }
 
 # Encryption in transit: reject any connection that doesn't use TLS
