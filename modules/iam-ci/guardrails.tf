@@ -146,10 +146,13 @@ data "aws_iam_policy_document" "env_fence" {
   # Anything tagged with an Environment other than this one (the other env, or "shared" bootstrap).
   # Untagged resources aren't matched here; the name-based statement and the boundary cover them.
   statement {
-    sid       = "DenyOtherEnvironmentByTag"
-    effect    = "Deny"
-    actions   = ["*"]
-    resources = ["*"]
+    sid     = "DenyOtherEnvironmentByTag"
+    effect  = "Deny"
+    actions = ["*"]
+    # The ECR repositories are shared by both environments (same image digest in staging and prod) and
+    # tagged "shared" by bootstrap. Without this, nodes couldn't pull images. Pushes and repository
+    # changes stay denied by protect_bootstrap and the workload boundary.
+    not_resources = [local.ecr_repo_arn]
     condition {
       test     = "Null"
       variable = "aws:ResourceTag/Environment"
