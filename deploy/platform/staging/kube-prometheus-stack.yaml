@@ -1,0 +1,89 @@
+# Prometheus, Grafana, Alertmanager, node-exporter and kube-state-metrics (ADR-003, INF-15).
+# Alert routing to email / Telegram comes in INF-16; dashboards and SLO rules in INF-17.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: staging
+  template:
+    metadata:
+      name: kube-prometheus-stack
+    spec:
+      project: default
+      source:
+        repoURL: https://prometheus-community.github.io/helm-charts
+        chart: kube-prometheus-stack
+        targetRevision: 93.1.1
+        helm:
+          valuesObject:
+            # EKS runs the control plane, so these components can't be scraped
+            kubeControllerManager:
+              enabled: false
+            kubeScheduler:
+              enabled: false
+            kubeEtcd:
+              enabled: false
+            # kube-proxy only listens on 127.0.0.1 for metrics on EKS
+            kubeProxy:
+              enabled: false
+            prometheus:
+              prometheusSpec:
+                # Short-term metrics; long-term evidence is the 365-day logs and the audit trail
+                retention: 15d
+                # Pick up ServiceMonitors and rules from every namespace and chart, not only this one
+                serviceMonitorSelectorNilUsesHelmValues: false
+                podMonitorSelectorNilUsesHelmValues: false
+                ruleSelectorNilUsesHelmValues: false
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 1Gi
+                  limits:
+                    memory: 2Gi
+                storageSpec:
+                  volumeClaimTemplate:
+                    spec:
+                      storageClassName: gp3-encrypted
+                      accessModes: ["ReadWriteOnce"]
+                      resources:
+                        requests:
+                          storage: 20Gi
+            alertmanager:
+              alertmanagerSpec:
+                resources:
+                  requests:
+                    cpu: 20m
+                    memory: 64Mi
+            grafana:
+              # Dashboards come from code (INF-17), so nothing needs to persist in Grafana itself.
+              # Reached with kubectl port-forward until it gets an ALB with TLS and login.
+              persistence:
+                enabled: false
+              # Helm test pods aren't used with Argo CD
+              testFramework:
+                enabled: false
+              additionalDataSources:
+                - name: Loki
+                  type: loki
+                  uid: loki
+                  url: http://loki.monitoring.svc:3100
+                  access: proxy
+      destination:
+        server: '{{.server}}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          # The operator's CRDs are too large for client-side apply's last-applied annotation
+          - ServerSideApply=true

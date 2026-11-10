@@ -1,0 +1,76 @@
+# YACE: the ALB's CloudWatch metrics in Prometheus, for the availability and latency SLOs (APP-14).
+# AWS access through the read-only Pod Identity role on service account "yace" (modules/observability).
+# ALBs are found by the elbv2.k8s.aws/cluster tag the LB Controller puts on them.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: yace
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: staging
+  template:
+    metadata:
+      name: yace
+    spec:
+      project: default
+      source:
+        repoURL: https://prometheus-community.github.io/helm-charts
+        chart: prometheus-yet-another-cloudwatch-exporter
+        targetRevision: 0.50.0
+        helm:
+          valuesObject:
+            serviceAccount:
+              create: true
+              name: yace
+            # Helm test pods aren't used with Argo CD
+            testConnection: false
+            serviceMonitor:
+              enabled: true
+              interval: 60s
+              timeout: 30s
+            resources:
+              requests:
+                cpu: 20m
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+            config: |-
+              apiVersion: v1alpha1
+              sts-region: {{index .metadata.annotations "region"}}
+              discovery:
+                exportedTagsOnMetrics:
+                  AWS/ApplicationELB:
+                    - ingress.k8s.aws/stack
+                jobs:
+                  - type: AWS/ApplicationELB
+                    regions:
+                      - {{index .metadata.annotations "region"}}
+                    searchTags:
+                      - key: elbv2.k8s.aws/cluster
+                        value: ^{{index .metadata.annotations "cluster_name"}}$
+                    period: 60
+                    length: 300
+                    metrics:
+                      - name: RequestCount
+                        statistics: [Sum]
+                      - name: HTTPCode_Target_5XX_Count
+                        statistics: [Sum]
+                      - name: HTTPCode_ELB_5XX_Count
+                        statistics: [Sum]
+                      - name: TargetResponseTime
+                        statistics: [p95]
+      destination:
+        server: '{{.server}}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
