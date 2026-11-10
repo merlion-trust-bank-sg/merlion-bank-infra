@@ -27,3 +27,8 @@ output "github_oidc_provider_arn" {
   description = "For the CI role trust policies in modules/iam-ci"
   value       = data.aws_iam_openid_connect_provider.github.arn
 }
+
+output "ecr_repository_urls" {
+  description = "Image name => repository URL, for the app pipeline and the Helm chart"
+  value       = { for k, r in aws_ecr_repository.app : k => r.repository_url }
+}
