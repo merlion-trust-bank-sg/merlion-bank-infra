@@ -18,8 +18,6 @@ metadata:
     {{- include "boa.labels" $ | nindent 4 }}
   annotations:
     argocd.argoproj.io/sync-wave: "1"
-    # A Job's pod template can't be changed, so a new chart version replaces the Job instead
-    argocd.argoproj.io/sync-options: Replace=true
 spec:
   backoffLimit: 4
   ttlSecondsAfterFinished: 600
