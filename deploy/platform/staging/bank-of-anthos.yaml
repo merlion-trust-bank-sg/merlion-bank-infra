@@ -21,7 +21,8 @@ spec:
       project: default
       source:
         repoURL: https://github.com/merlion-trust-bank-sg/merlion-bank-infra
-        targetRevision: main
+        # The same branch as the root app: main normally, a branch when bootstrap.sh is testing one
+        targetRevision: '{{index .metadata.annotations "git_revision"}}'
         path: deploy/helm/bank-of-anthos
         helm:
           valueFiles:

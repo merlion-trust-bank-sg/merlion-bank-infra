@@ -48,8 +48,8 @@ helm upgrade --install argocd oci://ghcr.io/argoproj/argo-helm/argo-cd \
 # GitOps bridge: register this cluster with Argo CD and pass it the Terraform facts. See
 # cluster-secret.yaml for why; envsubst fills in its ${...} placeholders from the variables above.
 echo "==> Cluster facts for the add-ons"
-VARS='${ENV} ${CLUSTER} ${REGION} ${VPC_ID} ${ACCOUNTS_DB_HOST} ${LEDGER_DB_HOST} ${ACCOUNTS_DB_SECRET} ${LEDGER_DB_SECRET} ${JWT_SECRET}'
-export ENV CLUSTER REGION VPC_ID ACCOUNTS_DB_HOST LEDGER_DB_HOST ACCOUNTS_DB_SECRET LEDGER_DB_SECRET JWT_SECRET
+VARS='${ENV} ${CLUSTER} ${REGION} ${VPC_ID} ${ACCOUNTS_DB_HOST} ${LEDGER_DB_HOST} ${ACCOUNTS_DB_SECRET} ${LEDGER_DB_SECRET} ${JWT_SECRET} ${BRANCH}'
+export ENV CLUSTER REGION VPC_ID ACCOUNTS_DB_HOST LEDGER_DB_HOST ACCOUNTS_DB_SECRET LEDGER_DB_SECRET JWT_SECRET BRANCH
 envsubst "$VARS" <"$ROOT/deploy/bootstrap/cluster-secret.yaml" |
   $KUBECTL apply -f -
 
