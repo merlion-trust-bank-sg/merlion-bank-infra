@@ -1,0 +1,35 @@
+# Settings shared by the services. Nothing secret here: passwords and keys come from ExternalSecrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: environment-config
+  labels:
+    {{- include "boa.labels" . | nindent 4 }}
+data:
+  LOCAL_ROUTING_NUM: {{ .Values.bank.localRoutingNum | quote }}
+  PUB_KEY_PATH: /tmp/.ssh/publickey
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-api-config
+  labels:
+    {{- include "boa.labels" . | nindent 4 }}
+data:
+  TRANSACTIONS_API_ADDR: "ledgerwriter:8080"
+  BALANCES_API_ADDR: "balancereader:8080"
+  HISTORY_API_ADDR: "transactionhistory:8080"
+  CONTACTS_API_ADDR: "contacts:8080"
+  USERSERVICE_API_ADDR: "userservice:8080"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-data-config
+  labels:
+    {{- include "boa.labels" . | nindent 4 }}
+data:
+  USE_DEMO_DATA: {{ ternary "True" "False" .Values.bank.demoData | quote }}
+  DEMO_LOGIN_USERNAME: {{ .Values.bank.demoLogin.username | quote }}
+  # The public upstream demo password for the synthetic demo users; not a credential
+  DEMO_LOGIN_PASSWORD: {{ .Values.bank.demoLogin.password | quote }}

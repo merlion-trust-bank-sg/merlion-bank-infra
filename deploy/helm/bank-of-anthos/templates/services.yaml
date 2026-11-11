@@ -1,0 +1,160 @@
+# One Deployment + Service per Bank of Anthos service, from .Values.services
+{{- range $name, $svc := .Values.services }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    {{- include "boa.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $svc.servicePort }}
+      targetPort: {{ $svc.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    {{- include "boa.labels" $ | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+        {{- include "boa.labels" $ | nindent 8 }}
+    spec:
+      serviceAccountName: bank-of-anthos
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 5
+      {{- include "boa.podSecurity" $ | nindent 6 }}
+      {{- if gt (int $svc.replicas) 1 }}
+      # Spread replicas over both AZs, so losing one AZ leaves the service up
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: {{ $name }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "boa.image" (dict "root" $ "img" $svc.image) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+          env:
+            - name: VERSION
+              value: {{ $.Values.bank.version | quote }}
+            - name: PORT
+              value: {{ $svc.port | quote }}
+            - name: LOG_LEVEL
+              value: info
+            # Tracing and metrics export to Google Cloud; off on AWS (monitoring is Prometheus/Loki)
+            - name: ENABLE_TRACING
+              value: "false"
+            - name: ENABLE_METRICS
+              value: "false"
+            {{- if eq $svc.jwt "private" }}
+            - name: PRIV_KEY_PATH
+              value: /tmp/.ssh/privatekey
+            {{- end }}
+            {{- if eq $svc.kind "java" }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Heap sized to the container's memory limit
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75.0"
+            {{- end }}
+            {{- if eq $name "frontend" }}
+            - name: DEFAULT_USERNAME
+              valueFrom:
+                configMapKeyRef: { name: demo-data-config, key: DEMO_LOGIN_USERNAME }
+            - name: DEFAULT_PASSWORD
+              valueFrom:
+                configMapKeyRef: { name: demo-data-config, key: DEMO_LOGIN_PASSWORD }
+            - name: CLUSTER_NAME
+              value: {{ $.Values.clusterName | default "unknown" | quote }}
+            {{- end }}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            {{- if $svc.callsServices }}
+            - configMapRef:
+                name: service-api-config
+            {{- end }}
+            {{- if $svc.db }}
+            - secretRef:
+                name: {{ $svc.db }}-db
+            {{- end }}
+          {{- with $svc.probes }}
+          {{- if .startup }}
+          startupProbe:
+            httpGet: { path: {{ .startup }}, port: http }
+            periodSeconds: 5
+            failureThreshold: 60   # Java services take up to ~5 minutes on small nodes
+          {{- end }}
+          {{- if .readiness }}
+          readinessProbe:
+            httpGet: { path: {{ .readiness }}, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 10
+          {{- end }}
+          {{- if .liveness }}
+          livenessProbe:
+            httpGet: { path: {{ .liveness }}, port: http }
+            {{- if not .startup }}
+            initialDelaySeconds: 60
+            {{- end }}
+            periodSeconds: 15
+            timeoutSeconds: 30
+          {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+          {{- include "boa.containerSecurity" $ | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: jwt
+              mountPath: /tmp/.ssh
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: jwt
+          secret:
+            secretName: jwt-key
+            items:
+              {{- if eq $svc.jwt "private" }}
+              - { key: jwtRS256.key, path: privatekey }
+              {{- end }}
+              - { key: jwtRS256.key.pub, path: publickey }
+---
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bank-of-anthos
+  labels:
+    {{- include "boa.labels" . | nindent 4 }}
+# The services don't call the Kubernetes or AWS APIs: no token mounted, no Pod Identity association
+automountServiceAccountToken: false

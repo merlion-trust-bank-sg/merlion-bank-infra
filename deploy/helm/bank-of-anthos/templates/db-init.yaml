@@ -1,0 +1,70 @@
+# Schema and demo data for the two RDS databases. Upstream ships them as Postgres images that load
+# /docker-entrypoint-initdb.d/ when they create an empty local database; here the same scripts run
+# once against RDS with psql. Each step is skipped if its table already exists, so a re-sync never
+# loads the demo data twice.
+#
+# Argo CD runs this before the services (PreSync hook) and deletes the Job once it succeeds.
+{{- range $key, $db := .Values.databases }}
+{{- $init := index $.Values.dbInit $key }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $key }}-db-init
+  labels:
+    app: {{ $key }}-db-init
+    {{- include "boa.labels" $ | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: {{ $key }}-db-init
+        {{- include "boa.labels" $ | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      {{- include "boa.podSecurity" $ | nindent 6 }}
+      containers:
+        - name: init
+          image: {{ include "boa.image" (dict "root" $ "img" $init.image) }}
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              # The init scripts call psql with --username/--dbname and no host: PGHOST etc. point it at RDS
+              until pg_isready -q; do echo "waiting for {{ $key }} database"; sleep 5; done
+              table={{ ternary "users" "transactions" (eq $key "accounts") }}
+              if [ "$(psql -tAc "select to_regclass('public.$table') is not null")" = "t" ]; then
+                echo "{{ $key }}: schema already loaded, nothing to do"
+                exit 0
+              fi
+              for f in /docker-entrypoint-initdb.d/*; do
+                echo "{{ $key }}: running $(basename "$f")"
+                case "$f" in
+                  *.sql) psql -v ON_ERROR_STOP=1 -f "$f" ;;
+                  *.sh)  bash "$f" ;;
+                esac
+              done
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: demo-data-config
+            - secretRef:
+                name: {{ $key }}-db
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          {{- include "boa.containerSecurity" $ | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+{{- end }}

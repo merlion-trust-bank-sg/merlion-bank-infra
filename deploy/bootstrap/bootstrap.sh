@@ -24,6 +24,13 @@ ARGOCD_CHART_VERSION="10.17.0"
 TF="terraform -chdir=$ROOT/envs/$ENV"
 CLUSTER="$($TF output -raw eks_cluster_name)"
 VPC_ID="$($TF output -raw vpc_id)"
+APP_SECRETS="$($TF output -json app_secrets)"
+DB_HOSTS="$($TF output -json db_hosts)"
+ACCOUNTS_DB_SECRET="$(jq -r .accounts_db <<<"$APP_SECRETS")"
+LEDGER_DB_SECRET="$(jq -r .ledger_db <<<"$APP_SECRETS")"
+JWT_SECRET="$(jq -r .jwt <<<"$APP_SECRETS")"
+ACCOUNTS_DB_HOST="$(jq -r .accounts <<<"$DB_HOSTS")"
+LEDGER_DB_HOST="$(jq -r .ledger <<<"$DB_HOSTS")"
 
 aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" --alias "$CLUSTER" >/dev/null
 KUBECTL="kubectl --context $CLUSTER"
@@ -41,8 +48,9 @@ helm upgrade --install argocd oci://ghcr.io/argoproj/argo-helm/argo-cd \
 # GitOps bridge: register this cluster with Argo CD and pass it the Terraform facts. See
 # cluster-secret.yaml for why; envsubst fills in its ${...} placeholders from the variables above.
 echo "==> Cluster facts for the add-ons"
-export ENV CLUSTER REGION VPC_ID
-envsubst '${ENV} ${CLUSTER} ${REGION} ${VPC_ID}' <"$ROOT/deploy/bootstrap/cluster-secret.yaml" |
+VARS='${ENV} ${CLUSTER} ${REGION} ${VPC_ID} ${ACCOUNTS_DB_HOST} ${LEDGER_DB_HOST} ${ACCOUNTS_DB_SECRET} ${LEDGER_DB_SECRET} ${JWT_SECRET}'
+export ENV CLUSTER REGION VPC_ID ACCOUNTS_DB_HOST LEDGER_DB_HOST ACCOUNTS_DB_SECRET LEDGER_DB_SECRET JWT_SECRET
+envsubst "$VARS" <"$ROOT/deploy/bootstrap/cluster-secret.yaml" |
   $KUBECTL apply -f -
 
 echo "==> Root application: deploy/platform/$ENV on $BRANCH"
