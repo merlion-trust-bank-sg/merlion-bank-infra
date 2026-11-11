@@ -20,6 +20,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ $name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
   labels:
     app: {{ $name }}
     {{- include "boa.labels" $ | nindent 4 }}

@@ -3,7 +3,10 @@
 # once against RDS with psql. Each step is skipped if its table already exists, so a re-sync never
 # loads the demo data twice.
 #
-# Argo CD runs this before the services (PreSync hook) and deletes the Job once it succeeds.
+# Sync waves set the order: wave 0 the config and the ExternalSecrets (and the Secrets they create),
+# wave 1 these Jobs, wave 2 the services. Argo CD waits for each wave to be healthy before the next,
+# so a Job only starts once its database Secret exists, and the services only once the Job is done.
+# Not a PreSync hook: hooks run before every other resource, including the Secrets they need.
 {{- range $key, $db := .Values.databases }}
 {{- $init := index $.Values.dbInit $key }}
 apiVersion: batch/v1
@@ -14,8 +17,9 @@ metadata:
     app: {{ $key }}-db-init
     {{- include "boa.labels" $ | nindent 4 }}
   annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "1"
+    # A Job's pod template can't be changed, so a new chart version replaces the Job instead
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   backoffLimit: 4
   ttlSecondsAfterFinished: 600
