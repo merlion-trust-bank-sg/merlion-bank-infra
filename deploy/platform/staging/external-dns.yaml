@@ -36,8 +36,11 @@ spec:
             sources: [ingress]
             # Only the app's hostname, in only the course zone. The IAM policy enforces the same.
             domainFilters: ['{{index .metadata.annotations "app_hostname"}}']
+            # The filter is our hostname, but the zone is its parent (sctp-sandbox.com). Without
+            # --aws-zone-match-parent the domain filter rules the course zone out and nothing is written.
             extraArgs:
               - '--zone-id-filter={{index .metadata.annotations "dns_zone_id"}}'
+              - --aws-zone-match-parent
             # sync: also deletes records it created once their Ingress is gone. It only ever deletes
             # records whose ownership TXT record carries this owner ID, never other groups' records.
             policy: sync
