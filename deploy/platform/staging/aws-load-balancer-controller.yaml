@@ -18,7 +18,7 @@ spec:
     metadata:
       name: aws-load-balancer-controller
     spec:
-      project: default
+      project: platform # deploy/bootstrap/projects.yaml
       source:
         repoURL: https://aws.github.io/eks-charts
         chart: aws-load-balancer-controller

@@ -18,7 +18,7 @@ spec:
     metadata:
       name: bank-of-anthos
     spec:
-      project: default
+      project: bank # deploy/bootstrap/projects.yaml: the bank namespace only
       source:
         repoURL: https://github.com/merlion-trust-bank-sg/merlion-bank-infra
         # The same branch as the root app: main normally, a branch when bootstrap.sh is testing one

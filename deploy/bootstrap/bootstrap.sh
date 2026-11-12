@@ -56,6 +56,10 @@ export ENV CLUSTER REGION VPC_ID ACCOUNTS_DB_HOST LEDGER_DB_HOST ACCOUNTS_DB_SEC
 envsubst "$VARS" <"$ROOT/deploy/bootstrap/cluster-secret.yaml" |
   $KUBECTL apply -f -
 
+# Before any Application uses them
+echo "==> Argo CD projects"
+$KUBECTL apply -f "$ROOT/deploy/bootstrap/projects.yaml"
+
 echo "==> Root application: deploy/platform/$ENV on $BRANCH"
 if [ "$BRANCH" != "main" ]; then
   # Argo CD reads from GitHub, so the branch must exist there

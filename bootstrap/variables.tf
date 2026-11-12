@@ -79,18 +79,3 @@ variable "state_version_retention_days" {
   type        = number
   default     = 90
 }
-
-variable "dns_zone_id" {
-  description = "The course's shared public zone, sctp-sandbox.com. Not ours: other groups have records in it."
-  type        = string
-  default     = "Z00541411T1NGPV97B5C0"
-}
-
-variable "dns_names" {
-  description = "Env => the app's hostname in that zone"
-  type        = map(string)
-  default = {
-    staging = "merlion-staging.sctp-sandbox.com"
-    prod    = "merlion.sctp-sandbox.com"
-  }
-}

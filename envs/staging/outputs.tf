@@ -41,7 +41,7 @@ output "db_hosts" {
 
 # Read by the Argo CD bootstrap step and passed to the app and ExternalDNS as cluster annotations
 output "app_hostname" {
-  value = var.app_hostname
+  value = local.app_hostname
 }
 
 output "certificate_arn" {
@@ -50,5 +50,5 @@ output "certificate_arn" {
 }
 
 output "dns_zone_id" {
-  value = var.dns_zone_id
+  value = module.dns.zone_id
 }
