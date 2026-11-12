@@ -1,0 +1,41 @@
+# Required on every PR to main. Promotion PRs (opened by the promotion GitHub App from merlion-bank-app's
+# cd workflow, on branch promote/<env>) merge without a human approval, so this check is what limits
+# them: such a PR passes only if it changes nothing but image digests in deploy/values-<env>.yaml.
+# Any other PR passes straight away; it needs an approval instead.
+name: promotion
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    name: staging promotion only
+    runs-on: ubuntu-latest
+    steps:
+      # Checked by branch and by author, so neither a human on promote/staging nor the App on another
+      # branch skips it
+      - name: Is this a promotion PR?
+        id: kind
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+        run: |
+          if [ "$HEAD_REF" = promote/staging ] || [ "$AUTHOR_TYPE" = Bot ]; then
+            echo "promotion=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not a promotion PR: nothing to check (it needs an approval instead)."
+          fi
+
+      - name: Checkout (full history)
+        if: steps.kind.outputs.promotion == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # compares this commit with main
+
+      - name: Only digests changed
+        if: steps.kind.outputs.promotion == 'true'
+        run: python3 .github/scripts/check-promotion.py "origin/${{ github.base_ref }}" deploy/values-staging.yaml
