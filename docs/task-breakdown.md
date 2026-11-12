@@ -92,7 +92,7 @@ merlion-bank-infra/
 merlion-bank-app/
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml                 # PR: SCA, build, image scan (fail on HIGH/CRITICAL), gitleaks
+│   │   ├── ci.yml                 # PR: SCA, build, image scan (fail on fixable CRITICAL), gitleaks
 │   │   └── cd.yml                 # main: push image to ECR (g4-merlion-ci-build) -> open staging promotion PR
 │   │                              #   in merlion-bank-infra (GitHub App token, auto-merge)
 │   ├── CODEOWNERS
@@ -176,8 +176,8 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 | APP-01 | Repo setup: branch protection, CODEOWNERS, PR template | DO2 | `SCRUM-<n>-repo-setup` | `.github/*` | – | DO1 |
 | APP-02 | Vendor Bank of Anthos source at a pinned release tag into `src/`, recording the upstream commit in README | DO2 | `SCRUM-<n>-import-source` | `src/`, `README.md` | APP-01 | SA |
 | APP-03 | Build images for the **6 services** (+ `loadgenerator` for staging), tagged with git SHA, pushed by digest | DO2 | `SCRUM-<n>-image-builds` | `ci.yml` | APP-02, INF-08 | DO1 |
-| APP-04 | **Security gate 1 – SCA:** Trivy `fs` / OWASP dependency-check on Python + Java deps, **fail on HIGH/CRITICAL**, exit code not suppressed | DO2 | `SCRUM-<n>-sca-gate` | `ci.yml` | APP-03 | SRE |
-| APP-05 | **Security gate 2 – image scan:** Trivy image `--exit-code 1 --severity HIGH,CRITICAL`, blocks push to ECR | DO2 | `SCRUM-<n>-image-scan-gate` | `ci.yml`, `security/.trivyignore` | APP-03 | SRE |
+| APP-04 | **Security gate 1 – SCA:** Trivy `fs` on Python + Java deps, **fail on CRITICAL findings that have a fix**, exit code not suppressed. HIGH findings are reported in the job output and in ECR's scan on push (per image, in the console or `aws ecr describe-image-scan-findings`), not blocking | DO2 | `SCRUM-<n>-sca-gate` | `ci.yml` | APP-03 | SRE |
+| APP-05 | **Security gate 2 – image scan:** Trivy image `--exit-code 1 --severity CRITICAL --ignore-unfixed`, on every PR and before every push to ECR | DO2 | `SCRUM-<n>-image-scan-gate` | `ci.yml`, `security/.trivyignore` | APP-03 | SRE |
 | APP-06 | Secret scanning: gitleaks in CI | DO1 | `SCRUM-<n>-gitleaks` | `ci.yml` | APP-01 | DO2 |
 | APP-07 | Helm chart (our own): 6 Deployments + Services, **`frontend` ≥ 2 replicas**, probes, requests/limits, PDBs, HPA on `frontend`. Ingress `ingressClassName: alb` with ACM cert and HTTPS 443. DB endpoints → RDS over TLS | DO1 | `SCRUM-<n>-helm-chart` | `merlion-bank-infra`: `deploy/helm/` | APP-03, INF-07, INF-14 | DO2 |
 | APP-08 | Secrets wiring: `ExternalSecret` objects for DB creds + JWT key pair → Kubernetes Secrets → pods. Nothing in values files or images | DO1 | `SCRUM-<n>-external-secrets` | `merlion-bank-infra`: `deploy/helm/templates/externalsecret.yaml` | APP-07, INF-09, INF-14 | SRE |
