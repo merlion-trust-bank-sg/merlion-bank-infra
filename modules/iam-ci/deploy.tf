@@ -131,6 +131,19 @@ data "aws_iam_policy_document" "deploy" {
     }
   }
 
+  # DNS validation records for the env's ACM certificate, in the course's shared zone. Only names under
+  # the env's own hostname: other groups have records in this zone.
+  statement {
+    sid       = "OwnDnsRecordsOnly"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = ["arn:aws:route53:::hostedzone/${var.dns_zone_id}"]
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["*.${var.dns_names[each.key]}"]
+    }
+  }
+
   # Deploy records for the audit trail: write-only, own env's prefix
   statement {
     sid       = "WriteDeployRecords"

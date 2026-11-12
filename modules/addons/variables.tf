@@ -30,3 +30,13 @@ variable "secrets_kms_key_arn" {
   description = "KMS key the readable secrets are encrypted with"
   type        = string
 }
+
+variable "dns_zone_id" {
+  description = "Public hosted zone ExternalDNS writes to (shared with other groups)"
+  type        = string
+}
+
+variable "dns_name" {
+  description = "The only name ExternalDNS may change in that zone, with the names under it and its ownership TXT records"
+  type        = string
+}
