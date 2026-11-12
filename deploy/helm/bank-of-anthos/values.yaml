@@ -135,7 +135,10 @@ dbInit:
 ingress:
   enabled: true
   scheme: internet-facing
-  # HTTPS needs an ACM certificate for a domain we control; until then, plain HTTP on port 80
+  # The public hostname (ExternalDNS points it at the ALB) and its ACM certificate. Both come from
+  # Terraform via the cluster annotations. With a certificate: HTTPS on 443, HTTP redirected to it.
+  # Without one: plain HTTP on port 80.
+  host: ""
   certificateArn: ""
 
 # The External Secrets store for this namespace

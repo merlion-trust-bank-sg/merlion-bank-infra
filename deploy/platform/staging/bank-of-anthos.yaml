@@ -39,6 +39,9 @@ spec:
                 host: '{{index .metadata.annotations "accounts_db_host"}}'
               ledger:
                 host: '{{index .metadata.annotations "ledger_db_host"}}'
+            ingress:
+              host: '{{index .metadata.annotations "app_hostname"}}'
+              certificateArn: '{{index .metadata.annotations "certificate_arn"}}'
       destination:
         server: '{{.server}}'
         namespace: bank

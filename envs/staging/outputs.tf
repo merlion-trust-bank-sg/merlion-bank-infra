@@ -38,3 +38,17 @@ output "db_hosts" {
   description = "RDS endpoint per database"
   value       = { for k, db in module.rds.databases : k => db.address }
 }
+
+# Read by the Argo CD bootstrap step and passed to the app and ExternalDNS as cluster annotations
+output "app_hostname" {
+  value = var.app_hostname
+}
+
+output "certificate_arn" {
+  description = "Issued ACM certificate for app_hostname (the ALB's HTTPS listener)"
+  value       = aws_acm_certificate_validation.app.certificate_arn
+}
+
+output "dns_zone_id" {
+  value = var.dns_zone_id
+}

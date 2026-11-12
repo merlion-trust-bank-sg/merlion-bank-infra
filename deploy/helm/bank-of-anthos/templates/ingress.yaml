@@ -1,6 +1,7 @@
 {{- if .Values.ingress.enabled }}
 # The AWS Load Balancer Controller turns this into an ALB in the public subnets, sending traffic
-# straight to the frontend pods' IPs.
+# straight to the frontend pods' IPs. ExternalDNS (deploy/platform/<env>/external-dns.yaml) points the
+# rule's host at the ALB.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -22,7 +23,12 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
+    {{- if .Values.ingress.host }}
+    - host: {{ .Values.ingress.host }}
+      http:
+    {{- else }}
     - http:
+    {{- end }}
         paths:
           - path: /
             pathType: Prefix

@@ -16,4 +16,8 @@ module "addons" {
     [aws_secretsmanager_secret.jwt.arn],
   )
   secrets_kms_key_arn = module.secretsmanager_key.arn
+
+  # ExternalDNS may change only the app's own records in the course zone
+  dns_zone_id = var.dns_zone_id
+  dns_name    = var.app_hostname
 }
