@@ -28,9 +28,12 @@ resource "aws_db_parameter_group" "this" {
   name_prefix = "${var.name}-pg${var.engine_version}-"
   family      = "postgres${var.engine_version}"
 
+  # Static in this PostgreSQL version: RDS reports it as pending-reboot. Saying so here keeps plans
+  # from showing a change every time; new instances start with it already applied.
   parameter {
-    name  = "rds.force_ssl"
-    value = "1"
+    name         = "rds.force_ssl"
+    value        = "1"
+    apply_method = "pending-reboot"
   }
 
   # Who connected and when, without logging queries (they could contain customer data). Since

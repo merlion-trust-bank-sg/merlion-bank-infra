@@ -9,7 +9,11 @@ module "addons" {
   permissions_boundary_arn  = "arn:aws:iam::${var.account_id}:policy/${local.name}-workload-boundary"
   pod_identity_trust_policy = module.eks.pod_identity_trust_policy
 
-  # External Secrets may read only the RDS-managed master secrets, decrypted with the env's key
-  readable_secret_arns = [for db in module.rds.databases : db.master_secret_arn]
-  secrets_kms_key_arn  = module.secretsmanager_key.arn
+  # External Secrets may read only the app's secrets: the RDS-managed master secrets and the JWT key
+  # pair, decrypted with the env's key
+  readable_secret_arns = concat(
+    [for db in module.rds.databases : db.master_secret_arn],
+    [aws_secretsmanager_secret.jwt.arn],
+  )
+  secrets_kms_key_arn = module.secretsmanager_key.arn
 }
