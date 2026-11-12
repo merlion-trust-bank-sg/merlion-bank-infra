@@ -221,6 +221,19 @@ data "aws_iam_policy_document" "deploy" {
     }
   }
 
+  # The Team tag decides what counts as ours (DenyDestroyingOtherTeams), so re-tagging another team's
+  # Auto Scaling group would let us delete it. EKS creates node groups' Auto Scaling groups without our
+  # tags and we tag them ourselves, so untagged groups can't simply be denied as above: allow tagging
+  # only this env's node groups, which EKS names eks-<node group name>-<id>.
+  statement {
+    sid     = "DenyTaggingOtherAutoScalingGroups"
+    effect  = "Deny"
+    actions = ["autoscaling:CreateOrUpdateTags", "autoscaling:DeleteTags"]
+    not_resources = [
+      "arn:aws:autoscaling:${local.r}:${local.a}:autoScalingGroup:*:autoScalingGroupName/eks-${local.p}-${each.key}-*",
+    ]
+  }
+
   # Application logs can hold customer data; the pipeline never reads them
   statement {
     sid       = "DenyAppLogs"
