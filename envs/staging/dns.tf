@@ -2,12 +2,21 @@
 # (deploy/platform/staging/external-dns.yaml) points the hostname at the ALB; the ALB serves the
 # certificate. The zone belongs to the course and other groups have records in it: only names ending in
 # our hostname may be changed (CI role and ExternalDNS role, see modules/iam-ci and modules/addons).
+# Hostname and zone come from modules/dns, the same values bootstrap gives the CI role.
+module "dns" {
+  source = "../../modules/dns"
+}
+
+locals {
+  app_hostname = module.dns.hostnames[local.environment]
+}
+
 data "aws_route53_zone" "course" {
-  zone_id = var.dns_zone_id
+  zone_id = module.dns.zone_id
 }
 
 resource "aws_acm_certificate" "app" {
-  domain_name       = var.app_hostname
+  domain_name       = local.app_hostname
   validation_method = "DNS"
 
   lifecycle {

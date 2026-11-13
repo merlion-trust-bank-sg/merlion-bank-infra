@@ -29,15 +29,3 @@ variable "team" {
   type    = string
   default = "g4"
 }
-
-variable "app_hostname" {
-  description = "The bank's public hostname. Must match the staging entry of dns_names in bootstrap (the CI role may only change records under it)."
-  type        = string
-  default     = "merlion-staging.sctp-sandbox.com"
-}
-
-variable "dns_zone_id" {
-  description = "The course's shared public zone, sctp-sandbox.com. Not ours: we only add records under app_hostname."
-  type        = string
-  default     = "Z00541411T1NGPV97B5C0"
-}
