@@ -25,6 +25,17 @@ variable "project" {
   }
 }
 
+variable "enabled" {
+  description = <<-EOT
+    Whether prod exists. false = torn down: no resources, no cost, and plan prod shows no changes on
+    every merge. Changed only in a reviewed PR; the apply then needs a production approval, so
+    bringing prod up and tearing it down are both approved changes. To tear down, also set
+    deletion_protection = false in rds.tf in the same PR (each database keeps a dated final snapshot).
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "team" {
   type    = string
   default = "g4"
