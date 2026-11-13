@@ -10,6 +10,8 @@ locals {
     # These run as pods, so they need nodes first
     coredns            = { before_nodes = false, role = null, service_account = null }
     aws-ebs-csi-driver = { before_nodes = false, role = "ebs_csi", service_account = "ebs-csi-controller-sa" }
+    # Pod CPU and memory use for HorizontalPodAutoscalers and kubectl top. No AWS access.
+    metrics-server = { before_nodes = false, role = null, service_account = null }
   }
 
   # Volumes the EBS CSI driver creates (e.g. for Prometheus) aren't Terraform resources, so the

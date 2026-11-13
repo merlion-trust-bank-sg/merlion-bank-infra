@@ -26,7 +26,9 @@ metadata:
     app: {{ $name }}
     {{- include "boa.labels" $ | nindent 4 }}
 spec:
+  {{- if not (and $svc.hpa $svc.hpa.enabled) }}
   replicas: {{ $svc.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: {{ $name }}
@@ -40,7 +42,7 @@ spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 5
       {{- include "boa.podSecurity" $ | nindent 6 }}
-      {{- if gt (int $svc.replicas) 1 }}
+      {{- if gt (int (include "boa.minReplicas" $svc)) 1 }}
       # Spread replicas over both AZs, so losing one AZ leaves the service up
       topologySpreadConstraints:
         - maxSkew: 1
