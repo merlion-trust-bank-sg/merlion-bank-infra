@@ -2,11 +2,17 @@
 # cd workflow, on branch promote/<env>) merge without a human approval, so this check is what limits
 # them: such a PR passes only if it changes nothing but image digests in deploy/values-<env>.yaml.
 # Any other PR passes straight away; it needs an approval instead.
+#
+# pull_request_target, not pull_request: the workflow and the script run from main, so a PR can't
+# change the check it's judged by (promotion PRs skip the approval that would otherwise catch that).
+# The PR's commits are fetched as data only and read with git diff / git show; nothing from the PR is
+# run, and the job has no secrets and read-only access.
 name: promotion
 
 on:
-  pull_request:
+  pull_request_target:
     branches: [main]
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -30,12 +36,24 @@ jobs:
             echo "Not a promotion PR: nothing to check (it needs an approval instead)."
           fi
 
-      - name: Checkout (full history)
+      # main's code (the script), full history so the PR's commits can be compared with it
+      - name: Checkout main
         if: steps.kind.outputs.promotion == 'true'
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # compares this commit with main
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The PR's commit, as data only: never checked out, never run
+      - name: Fetch the PR's commit
+        if: steps.kind.outputs.promotion == 'true'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: git fetch --quiet origin "pull/${PR}/head:pr"
 
       - name: Only digests changed
         if: steps.kind.outputs.promotion == 'true'
-        run: python3 .github/scripts/check-promotion.py "origin/${{ github.base_ref }}" deploy/values-staging.yaml
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 .github/scripts/check-promotion.py "$BASE" pr deploy/values-staging.yaml
