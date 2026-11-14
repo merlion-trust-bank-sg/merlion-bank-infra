@@ -27,3 +27,22 @@ output "github_oidc_provider_arn" {
   description = "For the CI role trust policies in modules/iam-ci"
   value       = data.aws_iam_openid_connect_provider.github.arn
 }
+
+output "ecr_repository_urls" {
+  description = "Image name => repository URL, for the app pipeline and the Helm chart"
+  value       = { for k, r in aws_ecr_repository.app : k => r.repository_url }
+}
+
+output "audit_bucket" {
+  description = "Object Lock bucket for CloudTrail logs and deploy records (deploys/<env>/)"
+  value       = module.audit.bucket_name
+}
+
+output "audit_trail_arn" {
+  value = module.audit.trail_arn
+}
+
+output "audit_kms_key_arn" {
+  description = "Writers of deploy records need kms:GenerateDataKey on this key"
+  value       = module.audit.kms_key_arn
+}
