@@ -1,0 +1,37 @@
+{{- /*
+One HorizontalPodAutoscaler per service with hpa.enabled (frontend only for now). It scales the
+Deployment on average CPU use relative to the pods' CPU request; metrics-server (EKS add-on) provides
+the numbers. The Deployment leaves out replicas when this is on, so Argo CD doesn't reset the count.
+*/}}
+{{- range $name, $svc := .Values.services }}
+{{- with $svc.hpa }}
+{{- if .enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    {{- include "boa.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ .minReplicas }}
+  maxReplicas: {{ .maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .targetCPU }}
+  behavior:
+    # Scale down slowly, so a short dip between bursts doesn't remove pods that are needed again
+    scaleDown:
+      stabilizationWindowSeconds: 300
+{{- end }}
+{{- end }}
+{{- end }}

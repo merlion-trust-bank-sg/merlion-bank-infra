@@ -1,0 +1,51 @@
+# Argo CD projects: what each kind of Application may deploy, from where, to where. Argo CD's built-in
+# "default" project allows any source, any namespace and any cluster-wide resource, so a mistake in one
+# ApplicationSet (or a bad change in the repo) could overwrite anything in the cluster. Applied by
+# bootstrap.sh before the root app; Applications refuse to sync if they break their project's rules.
+
+# The root app and the add-ons: cluster-wide components (CRDs, controllers, webhooks), from this repo
+# and the pinned upstream chart repos only, into their own namespaces only.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  description: Cluster add-ons and the root app (deploy/platform/<env>)
+  sourceRepos:
+    - https://github.com/merlion-trust-bank-sg/merlion-bank-infra
+    - https://aws.github.io/eks-charts
+    - https://charts.external-secrets.io
+    - https://kubernetes-sigs.github.io/external-dns
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
+    - server: https://kubernetes.default.svc
+      namespace: external-secrets
+    - server: https://kubernetes.default.svc
+      namespace: external-dns
+  # Add-ons install CRDs, cluster roles and webhooks
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+# Bank of Anthos: our chart from this repo, into the bank namespace only, and no cluster-wide resources
+# except creating its own namespace. It can't install CRDs, cluster roles or webhooks, or deploy into
+# another namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: bank
+  namespace: argocd
+spec:
+  description: Bank of Anthos (deploy/helm/bank-of-anthos)
+  sourceRepos:
+    - https://github.com/merlion-trust-bank-sg/merlion-bank-infra
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: bank
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

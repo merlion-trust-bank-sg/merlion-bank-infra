@@ -54,7 +54,7 @@ Requirement IDs refer to `docs/requirements.md`; decisions with wider impact hav
 - **NGINX Ingress behind an NLB:** more control, but one more component to run and patch, and TLS certificates to manage in the cluster.
 
 ### Security scanning – Trivy, checkov, gitleaks
-- **Why:** open-source, run inside GitHub Actions, and fail the build on HIGH/CRITICAL findings. Trivy covers dependencies and images, checkov covers Terraform, gitleaks covers committed secrets. No code or results are sent to a third-party SaaS.
+- **Why:** open-source, run inside GitHub Actions, and fail the build on CRITICAL findings that have a fix (HIGH findings are reported in CI and in ECR's scan on push, not blocking, because the application is unmodified upstream code). Trivy covers dependencies and images, checkov covers Terraform, gitleaks covers committed secrets. No code or results are sent to a third-party SaaS.
 - **Snyk:** strong vulnerability data, but a SaaS service that receives our dependency data.
 - **Amazon Inspector:** useful for images already in ECR, but it scans after the push, while we want the gate to block the push.
 

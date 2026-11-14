@@ -9,9 +9,11 @@ module "rds" {
     ledger   = { db_name = "ledgerdb" }
   }
 
-  vpc_id                     = module.network.vpc_id
-  db_subnet_group_name       = module.network.database_subnet_group_name
-  allowed_security_group_ids = [module.eks.cluster_security_group_id]
+  vpc_id               = module.network.vpc_id
+  db_subnet_group_name = module.network.database_subnet_group_name
+  allowed_security_groups = {
+    eks_cluster = module.eks.cluster_security_group_id
+  }
 
   # db.t4g.small (2 GiB) is proven in this account; RDS classes aren't limited like EC2
   engine_version = "18"

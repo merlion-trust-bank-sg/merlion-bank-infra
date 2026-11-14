@@ -1,0 +1,150 @@
+# Defaults for every environment. Per-environment values (image digests, sizes, the loadgenerator)
+# live in deploy/values-<env>.yaml; anything that changes on every rebuild (secret names, hostnames)
+# is passed in by the Argo CD ApplicationSet from the cluster annotations.
+
+# ECR repository prefix. Images are referenced by digest, so a deploy never changes under us.
+image:
+  registry: ""   # e.g. 255945442255.dkr.ecr.us-east-1.amazonaws.com/merlion
+  pullPolicy: IfNotPresent
+
+# Set per environment by the ApplicationSet
+env: ""
+secrets:
+  accountsDb: ""   # Secrets Manager ARN of the RDS-managed master secret
+  ledgerDb: ""
+  jwt: ""          # Secrets Manager name of the JWT key pair
+databases:
+  accounts: { host: "", name: accountsdb }
+  ledger: { host: "", name: ledgerdb }
+
+# Bank of Anthos settings shared by every service
+bank:
+  version: v0.6.11
+  localRoutingNum: "883745000"
+  # Demo users ('testuser' etc.) with the public upstream demo password; synthetic data only
+  demoData: true
+  demoLogin: { username: testuser, password: bankofanthos }
+
+# One entry per service. image.digest is set per environment.
+services:
+  frontend:
+    image: { name: frontend, digest: "" }
+    # Used only when hpa.enabled is false; otherwise the HPA sets the count
+    replicas: 2
+    # Every page load goes through the frontend, so it scales with traffic (NFR-5). Target is a share of
+    # the CPU request below. 4 at most: each extra pod takes one of the cluster's pod slots.
+    hpa: { enabled: true, minReplicas: 2, maxReplicas: 4, targetCPU: 70 }
+    port: 8080
+    servicePort: 80
+    kind: python
+    db: ""
+    jwt: public
+    callsServices: true
+    probes: { readiness: /ready, liveness: /ready, startup: "" }
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { memory: 256Mi }
+    env:
+      SCHEME: http
+      BANK_NAME: Merlion Trust Bank
+      # Not on GCP: skip the GKE metadata lookups at startup
+      METADATA_SERVER: "127.0.0.1:1"
+      BACKEND_TIMEOUT: "4"
+  userservice:
+    image: { name: userservice, digest: "" }
+    replicas: 1
+    port: 8080
+    servicePort: 8080
+    kind: python
+    db: accounts
+    jwt: private
+    probes: { readiness: /ready, liveness: "", startup: "" }
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { memory: 256Mi }
+    env:
+      TOKEN_EXPIRY_SECONDS: "3600"
+  contacts:
+    image: { name: contacts, digest: "" }
+    replicas: 1
+    port: 8080
+    servicePort: 8080
+    kind: python
+    db: accounts
+    jwt: public
+    probes: { readiness: /ready, liveness: "", startup: "" }
+    resources:
+      requests: { cpu: 50m, memory: 96Mi }
+      limits: { memory: 192Mi }
+    env: {}
+  ledgerwriter:
+    image: { name: ledgerwriter, digest: "" }
+    replicas: 1
+    port: 8080
+    servicePort: 8080
+    kind: java
+    db: ledger
+    jwt: public
+    callsServices: true
+    probes: { readiness: /ready, liveness: "", startup: /ready }
+    resources:
+      requests: { cpu: 100m, memory: 384Mi }
+      limits: { memory: 512Mi }
+    env: {}
+  balancereader:
+    image: { name: balancereader, digest: "" }
+    replicas: 1
+    port: 8080
+    servicePort: 8080
+    kind: java
+    db: ledger
+    jwt: public
+    probes: { readiness: /ready, liveness: /healthy, startup: /healthy }
+    resources:
+      requests: { cpu: 100m, memory: 384Mi }
+      limits: { memory: 512Mi }
+    env:
+      POLL_MS: "100"
+      CACHE_SIZE: "1000000"
+  transactionhistory:
+    image: { name: transactionhistory, digest: "" }
+    replicas: 1
+    port: 8080
+    servicePort: 8080
+    kind: java
+    db: ledger
+    jwt: public
+    probes: { readiness: /ready, liveness: /healthy, startup: /healthy }
+    resources:
+      requests: { cpu: 100m, memory: 384Mi }
+      limits: { memory: 512Mi }
+    env:
+      POLL_MS: "100"
+      CACHE_SIZE: "1000"
+      CACHE_MINUTES: "60"
+      HISTORY_LIMIT: "100"
+
+# Synthetic traffic, staging only
+loadgenerator:
+  enabled: false
+  image: { name: loadgenerator, digest: "" }
+  users: "5"
+
+# Schema and demo data, loaded into RDS once per database (Argo CD PreSync hook)
+dbInit:
+  accounts: { image: { name: accounts-db, digest: "" } }
+  ledger: { image: { name: ledger-db, digest: "" } }
+
+# Internet-facing ALB in front of the frontend (AWS Load Balancer Controller)
+ingress:
+  enabled: true
+  scheme: internet-facing
+  # The public hostname (ExternalDNS points it at the ALB) and its ACM certificate. Both come from
+  # Terraform via the cluster annotations. With a certificate: HTTPS on 443, HTTP redirected to it.
+  # Without one: plain HTTP on port 80.
+  host: ""
+  certificateArn: ""
+
+# The External Secrets store for this namespace
+secretStore:
+  region: us-east-1
