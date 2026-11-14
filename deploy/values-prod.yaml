@@ -6,24 +6,24 @@ image:
 
 services:
   frontend:
-    image: { digest: "sha256:a0d77d648b8fcc9a95ee08f4ac5d597556164447733606faf7a63da9ffd4a291" }
+    image: { digest: "sha256:423bbf3bd665db8b935953283d435a62be51bef0c8ca4ef1d68799f4432b601e" }
   userservice:
-    image: { digest: "sha256:5fd9fd7f2a18e237faa362cc8b18d58000d9557c7d36e749b0827dda3ccd1b2a" }
+    image: { digest: "sha256:f5b89941196e3c71576291f9027d64206f73dc0ea733828d3dd157008364036a" }
   contacts:
-    image: { digest: "sha256:b58d091f53ba51b596bc94b35b69ffad8b637e7515babbad83e64adb3e76e962" }
+    image: { digest: "sha256:1bb84f959428526c740a6f33c41dc941796544186ba7fa77ea7873bb015e511f" }
   ledgerwriter:
-    image: { digest: "sha256:b66efed587c295788369459898e7ae5a5e15150c3fcd782170c19a8c4b31059d" }
+    image: { digest: "sha256:ff8dfe01538a3999d755614a60bc2ae6e9425d355f1746263a34c00b4308caf6" }
   balancereader:
-    image: { digest: "sha256:42a51d724d0537a5214b653d63c00fd60eb9d8ee0df3f396716c9e47262ae1ee" }
+    image: { digest: "sha256:b4bcd7fea631dd03c569a15689dee99b2fab99288ab0c879e3f074b4358b9931" }
   transactionhistory:
-    image: { digest: "sha256:609acd4d93aed03139a59e3c4f58bedb695cf4649dbe6fae636d2f45bad3d811" }
+    image: { digest: "sha256:a93674750c0758a52b6e682871cd07c2b1169a1c2523334296b5a339b8e225ee" }
 
 dbInit:
-  accounts: { image: { digest: "sha256:f25eeed0bbbaff24959e3ca205aeccec29d97249f67f1c89afa4c7a13b89da55" } }
-  ledger: { image: { digest: "sha256:162de9ffae92032849870290dc405e3746e274846344f6fd4efc470e08edc849" } }
+  accounts: { image: { digest: "sha256:5be1eac2fe98075a322621ca6b77c41095dd98050dc96cc4851c9651d2903aec" } }
+  ledger: { image: { digest: "sha256:8a403d645a0bbdf13484beb6f410682926555e7de7334684ccc043615057acff" } }
 
 # No synthetic traffic in prod. The demo users stay (synthetic data only, A-2), so the bank can be
 # shown; a real bank would set bank.demoData: false.
 loadgenerator:
   enabled: false
-  image: { digest: "sha256:94f2081bd87a2851bdce6ca4b68ececc02eec3dab6115a7a2f6df50ba5392130" }
+  image: { digest: "sha256:41b1e408b2fd8cbc461a17853225a8b04596f1b5caea9a69d0a3ef822542ce30" }
