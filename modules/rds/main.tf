@@ -106,9 +106,16 @@ resource "aws_db_instance" "this" {
   auto_minor_version_upgrade = true
   copy_tags_to_snapshot      = true
 
-  deletion_protection       = var.deletion_protection
-  skip_final_snapshot       = var.skip_final_snapshot
-  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-${each.key}-db-final"
+  deletion_protection = var.deletion_protection
+  skip_final_snapshot = var.skip_final_snapshot
+  # Dated with when the database was created, so each teardown leaves its own snapshot and a second
+  # one doesn't fail on the first's name. RDS takes it at delete time; Terraform never tracks it.
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-${each.key}-db-final-${formatdate("YYYYMMDDhhmm", plantimestamp())}"
 
   apply_immediately = true
+
+  lifecycle {
+    # plantimestamp() changes on every plan; keep the name from when the database was created
+    ignore_changes = [final_snapshot_identifier]
+  }
 }
