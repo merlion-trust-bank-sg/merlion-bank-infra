@@ -11,11 +11,14 @@ module "eks" {
 
   # The training account only allows t2.micro, t3.micro, t3.medium and t4g.large. t3.medium (2 vCPU,
   # 4 GiB, up to 17 pods each with the VPC CNI) is the largest x86 type allowed; t4g.large is ARM and
-  # would need arm64 images. 3 nodes across both AZs.
+  # would need arm64 images. 4 nodes across both AZs: a t3.medium holds at most 17 pods, and the
+  # system add-ons, Argo CD, the add-ons, monitoring and the bank need ~50 of them, so 3 nodes would be
+  # nearly full and losing one would leave pods unscheduled. desired_size only applies when the node
+  # group is created; min_size is what makes an existing group scale up.
   node_instance_types = ["t3.medium"]
-  node_min_size       = 2
-  node_desired_size   = 3
-  node_max_size       = 4
+  node_min_size       = 4
+  node_desired_size   = 4
+  node_max_size       = 5
 
   logs_kms_key_arn = module.logs_key.arn
 

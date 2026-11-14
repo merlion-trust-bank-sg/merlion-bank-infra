@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bank-of-anthos
+description: Bank of Anthos (upstream v0.6.11) for Merlion Trust Bank on EKS, with RDS and External Secrets
+type: application
+version: 0.1.0
+appVersion: v0.6.11

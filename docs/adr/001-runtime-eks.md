@@ -28,7 +28,7 @@ by **Argo CD** from `merlion-bank-infra` (GitOps, ADR-007). Pods that call AWS u
 |---|---|---|---|
 | **Amazon ECS on Fargate** | No nodes to manage; cheaper at small scale; simpler IAM per task | Bank of Anthos ships Kubernetes manifests only, so we would rewrite 6 services as task definitions; self-hosted Prometheus/Loki/Grafana is awkward on Fargate (no DaemonSets, no node-level log collection); team has less ECS experience | Rejected |
 | **Amazon ECS on EC2** | Lower cost than EKS control plane | Same rewrite effort; we manage instances; weaker ecosystem for our observability stack | Rejected |
-| **Amazon EKS** | Runs Bank of Anthos close to upstream design; DaemonSets for Promtail/node-exporter; Helm for repeatable deploys; HPA, PDBs, probes; Pod Identity for per-pod AWS permissions; matches team skills | Control plane fee (~USD 73/month per cluster); more moving parts; Kubernetes upgrades to manage | **Chosen** |
+| **Amazon EKS** | Runs Bank of Anthos close to upstream design; DaemonSets for Alloy/node-exporter; Helm for repeatable deploys; HPA, PDBs, probes; Pod Identity for per-pod AWS permissions; matches team skills | Control plane fee (~USD 73/month per cluster); more moving parts; Kubernetes upgrades to manage | **Chosen** |
 
 ## Consequences
 **Positive**

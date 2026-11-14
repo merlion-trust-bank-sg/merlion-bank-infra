@@ -21,12 +21,18 @@ account.
 
 ## Decision
 **Trail**
-- A CloudTrail trail `g4-merlion-trail` (multi-region, read and write management events, log file
+- A CloudTrail trail `g4-merlion-trail` (multi-region, **write management events only**, log file
   validation) delivers to the audit bucket `g4-merlion-audit-<account-id>` in `us-east-1`.
-- Data events are also recorded for the audit bucket, limited to reads, deletes and retention
-  changes (`GetObject`, `DeleteObject`, `DeleteObjectVersion`, `PutObjectRetention`,
-  `PutObjectLegalHold`) with advanced event selectors. CloudTrail's own `PutObject` deliveries are
-  excluded, so the trail does not log its own writes.
+- Read-only management events (`Describe*`, `Get*`, `List*`, and STS calls such as
+  `AssumeRoleWithWebIdentity`) are left out (`include_read_management_events = false` in
+  `modules/audit`). The account already has a trail that records them, and in this shared account
+  they are mostly other groups' and controllers' polling, so ours would be a paid copy. HC-2 asks
+  who changed what, and that is in the write events.
+- Data events are also recorded for the audit bucket with advanced event selectors:
+  - reads, deletes and retention changes (`GetObject`, `DeleteObject`, `DeleteObjects`,
+    `PutObjectRetention`, `PutObjectLegalHold`);
+  - deploy record writes (`PutObject` under `deploys/` only). CloudTrail's own deliveries under
+    `AWSLogs/` are excluded, so the trail does not log its own writes.
 - Bucket policy, Object Lock and versioning changes are management events, so the trail records
   them without extra selectors.
 
@@ -84,9 +90,10 @@ This is also why compliance mode was rejected: it would block step 2 for a year.
 **Positive**
 - Meets HC-3: logs are retained for at least 365 days and cannot be deleted or overwritten in
   normal operation.
-- Meets HC-2: every management API call (reads and writes), including `AssumeRoleWithWebIdentity`
-  by the CI roles, is recorded with identity and time, together with reads, deletes and retention
-  changes on audit objects. Object-level calls on other buckets are not recorded.
+- Meets HC-2: every management API call that changes something is recorded with identity and
+  time, together with reads, deletes and retention changes on audit objects and every deploy record
+  write. A CI role's calls show as `assumed-role/<role>/ci-<run id>-<attempt>`, which links each
+  change to its GitHub Actions run. Object-level calls on other buckets are not recorded.
 - The pipeline cannot weaken the trail, so a compromised workflow cannot hide its own changes.
 - Log file validation (signed digest files) detects altered log files.
 
@@ -102,9 +109,15 @@ This is also why compliance mode was rejected: it would block step 2 for a year.
 - **Trail limit:** AWS allows 5 trails per region per account, and the account is shared with other
   groups. Mitigation: check `aws cloudtrail describe-trails` before INF-10; if the limit is reached,
   agree a slot with the instructor before building.
+- **Read events not in our trail:** `AssumeRoleWithWebIdentity` (which carries the OIDC subject)
+  and `GetSecretValue` are read-only, so they are only in the account's own trail and the 90-day
+  event history, not under our Object Lock. Mitigation: each CI role trusts exactly one subject
+  (ADR-005), so the role name already says which repository and environment assumed it, and the
+  role's write events carry the `ci-<run id>` session name. Setting
+  `include_read_management_events = true` adds them back if an assessor needs them.
 - **Cost:** the account already has a trail (`management-events`), so ours is an additional copy of
-  management events, billed at about USD 2 per 100,000 events, plus the selected data events. Small,
-  and included in the cost estimate (DOC-05).
+  write management events, billed at about USD 2 per 100,000 events, plus the selected data events.
+  Small, and included in the cost estimate (DOC-05).
 
 ## Evidence (to be completed in INF-10)
 - `get-object-lock-configuration` → `ObjectLockEnabled: Enabled`, `Mode: GOVERNANCE`, `Days: 365`
