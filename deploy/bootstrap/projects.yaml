@@ -17,6 +17,8 @@ spec:
     - https://aws.github.io/eks-charts
     - https://charts.external-secrets.io
     - https://kubernetes-sigs.github.io/external-dns
+    - https://prometheus-community.github.io/helm-charts # kube-prometheus-stack, YACE
+    - https://grafana.github.io/helm-charts # Loki, Alloy
   destinations:
     - server: https://kubernetes.default.svc
       namespace: argocd
@@ -26,6 +28,8 @@ spec:
       namespace: external-secrets
     - server: https://kubernetes.default.svc
       namespace: external-dns
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
   # Add-ons install CRDs, cluster roles and webhooks
   clusterResourceWhitelist:
     - group: "*"
