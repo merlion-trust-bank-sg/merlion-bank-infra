@@ -61,11 +61,12 @@ jobs:
 
       # Removing the workload namespaces removes their Ingresses (the LB Controller then deletes the
       # ALBs) and PVCs (the EBS CSI driver deletes the volumes). Controllers in kube-system stay up
-      # until this has finished.
+      # until this has finished. external-dns stays up too: it removes our record from the course's
+      # shared zone once the Ingress is gone (policy: sync), and it can't do that if it's deleted first.
       - name: Remove workloads that own AWS resources
         if: steps.cluster.outputs.exists == 'true'
         run: |
-          keep='^(kube-system|kube-public|kube-node-lease|default|argocd)$'
+          keep='^(kube-system|kube-public|kube-node-lease|default|argocd|external-dns)$'
           for ns in $(kubectl --context staging get namespaces -o jsonpath='{.items[*].metadata.name}'); do
             if ! echo "$ns" | grep -Eq "$keep"; then
               echo "Deleting namespace $ns"
@@ -75,6 +76,8 @@ jobs:
           kubectl --context staging delete ingress --all --all-namespaces --wait=false || true
           kubectl --context staging wait --for=delete ingress --all --all-namespaces --timeout=10m || true
           kubectl --context staging wait --for=delete pv --all --timeout=10m || true
+          # external-dns syncs every minute; give it two rounds to delete the record
+          sleep 120
 
       - name: Terraform destroy (staging)
         working-directory: envs/staging
