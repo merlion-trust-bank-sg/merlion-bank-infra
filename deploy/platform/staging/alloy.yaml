@@ -1,0 +1,94 @@
+# Grafana Alloy on every node (Promtail's successor): reads every pod's logs through the Kubernetes
+# API and sends them to Loki, labelled with namespace, pod, container and app.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: alloy
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: staging
+  template:
+    metadata:
+      name: alloy
+    spec:
+      project: platform # deploy/bootstrap/projects.yaml
+      source:
+        repoURL: https://grafana.github.io/helm-charts
+        chart: alloy
+        targetRevision: 1.15.0
+        helm:
+          valuesObject:
+            controller:
+              type: daemonset
+            alloy:
+              # Each Alloy pod discovers only the pods on its own node
+              extraEnv:
+                - name: NODE_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              configMap:
+                content: |
+                  // Pods on this node only, so each Alloy pod tails its own node's containers
+                  discovery.kubernetes "pods" {
+                    role = "pod"
+                    selectors {
+                      role  = "pod"
+                      field = "spec.nodeName=" + sys.env("NODE_NAME")
+                    }
+                  }
+
+                  discovery.relabel "pods" {
+                    targets = discovery.kubernetes.pods.targets
+
+                    rule {
+                      source_labels = ["__meta_kubernetes_namespace"]
+                      target_label  = "namespace"
+                    }
+                    rule {
+                      source_labels = ["__meta_kubernetes_pod_name"]
+                      target_label  = "pod"
+                    }
+                    rule {
+                      source_labels = ["__meta_kubernetes_pod_container_name"]
+                      target_label  = "container"
+                    }
+                    // {namespace="bank", app="<service>"} is how APP-13 queries each service
+                    rule {
+                      source_labels = ["__meta_kubernetes_pod_label_app", "__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+                      separator     = ""
+                      target_label  = "app"
+                    }
+                  }
+
+                  loki.source.kubernetes "pods" {
+                    targets    = discovery.relabel.pods.output
+                    forward_to = [loki.write.default.receiver]
+                  }
+
+                  loki.write "default" {
+                    endpoint {
+                      url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
+                    }
+                  }
+      destination:
+        server: '{{.server}}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

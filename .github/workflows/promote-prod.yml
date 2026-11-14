@@ -1,0 +1,73 @@
+# "Promote to prod" button: Actions -> promote-prod -> Run workflow. Opens (or updates) a PR that sets
+# deploy/values-prod.yaml's digests to exactly the ones staging runs on main. It never merges: someone
+# other than whoever ran it approves the PR, and merging it is the prod deploy (Argo CD syncs prod).
+#
+# The PR is opened as the promotion GitHub App, because a PR opened with this workflow's GITHUB_TOKEN
+# wouldn't trigger the required checks. The App has no bypass of any rule. The "prod promotion only"
+# check then confirms the PR changes only digests, each equal to staging's on main and signed by
+# merlion-bank-app's cd.
+name: promote-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_smoke_test:
+        description: Promote even if staging's health check fails (say why in the PR)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One promotion at a time
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
+
+env:
+  BRANCH: promote/prod
+  FROM: deploy/values-staging.yaml
+  TO: deploy/values-prod.yaml
+  STAGING_URL: https://merlion-staging.sctp-sandbox.com
+
+jobs:
+  promote:
+    name: promote staging to prod
+    runs-on: ubuntu-latest
+    # Only main may run it, and the App's private key is a secret of this Environment (deployment
+    # branches: main only)
+    if: github.ref == 'refs/heads/main'
+    environment: promotion
+    steps:
+      # Don't promote a version that isn't working in staging
+      - name: Staging is healthy
+        if: ${{ !inputs.skip_smoke_test }}
+        run: |
+          for path in /ready /login; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$STAGING_URL$path")"
+            echo "$STAGING_URL$path -> $code"
+            [ "$code" = 200 ] || { echo "::error::Staging isn't healthy ($path returned $code); not promoting."; exit 1; }
+          done
+
+      # Valid one hour, merlion-bank-infra only
+      - name: Promotion App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.PROMOTION_APP_ID }}
+          private-key: ${{ secrets.PROMOTION_APP_PRIVATE_KEY }}
+          owner: merlion-trust-bank-sg
+          repositories: merlion-bank-infra
+
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Open the prod promotion PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SKIPPED: ${{ inputs.skip_smoke_test }}
+        run: .github/scripts/open-prod-promotion.sh

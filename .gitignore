@@ -19,3 +19,6 @@ override.tf.json
 kubeconfig
 .kube/
 .aws/
+
+# Python bytecode
+__pycache__/

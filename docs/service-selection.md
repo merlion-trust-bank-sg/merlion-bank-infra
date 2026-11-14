@@ -9,9 +9,11 @@ Requirement IDs refer to `docs/requirements.md`; decisions with wider impact hav
 | Container runtime | Amazon EKS, managed node group | ECS on Fargate, ECS on EC2 | ADR-001 |
 | Databases | Amazon RDS for PostgreSQL | Aurora PostgreSQL, PostgreSQL on EKS | This document |
 | Container registry | Amazon ECR | GitHub Container Registry, Docker Hub | This document, ADR-007 |
-| CI/CD | GitHub Actions | AWS CodePipeline + CodeBuild, Jenkins | This document |
-| Pipeline credentials | GitHub OIDC → IAM role per environment | IAM user access keys in GitHub secrets | ADR-005 |
+| CI and infrastructure pipeline | GitHub Actions | AWS CodePipeline + CodeBuild, Jenkins | This document |
+| Application delivery (CD) | Argo CD (GitOps), promotion PRs in `merlion-bank-infra` | Push deploys from GitHub Actions (`helm upgrade`), Flux | This document, ADR-007 |
+| Pipeline credentials | GitHub OIDC → IAM role per purpose and environment | IAM user access keys in GitHub secrets | ADR-005 |
 | Infrastructure as code | Terraform | CloudFormation, AWS CDK | This document |
+| Workload AWS access | EKS Pod Identity | IRSA, node instance role | This document |
 | Secrets | AWS Secrets Manager + External Secrets Operator | SSM Parameter Store, Kubernetes Secrets in Git | This document |
 | Encryption keys | AWS KMS customer managed keys | AWS managed keys | This document |
 | Ingress | Application Load Balancer via AWS Load Balancer Controller, ACM certificate | NGINX Ingress behind an NLB | This document |
@@ -30,15 +32,26 @@ Requirement IDs refer to `docs/requirements.md`; decisions with wider impact hav
 - **Why:** images stay in our AWS account and region; nodes pull with IAM (no registry passwords); immutable tags and scan on push support build-once promotion (ADR-007).
 - **GitHub Container Registry / Docker Hub:** images and their metadata would sit outside our AWS region, and pulls would need stored credentials.
 
-### CI/CD – GitHub Actions
-- **Why:** our code, PRs and reviews are already in GitHub, so checks and deploys sit next to the review that approves them (HC-2). GitHub environments give the manual production approval, and OIDC removes stored AWS keys (ADR-005).
+### CI and infrastructure pipeline – GitHub Actions
+- **Why:** our code, PRs and reviews are already in GitHub, so checks, image builds and Terraform runs sit next to the review that approves them (HC-2). The `production` environment gives the manual approval, and OIDC removes stored AWS keys (ADR-005).
 - **CodePipeline + CodeBuild:** runs inside AWS, but splits the audit trail between GitHub and AWS and is less familiar to the team.
 - **Jenkins:** a server we would have to host, patch and secure ourselves.
 - **Risk:** CI logs are stored by GitHub outside our region, so CI output must contain no customer data or application logs (ADR-006).
 
+### Application delivery – Argo CD (GitOps)
+- **Why:** what runs in the cluster is whatever is on `main` in `merlion-bank-infra`, so every app change is a reviewed commit, and Argo CD's sync history adds evidence (HC-2). Images are promoted by PRs that change only the image digest: automatic for staging, reviewed for prod, same digest (ADR-007). The cluster needs no write access to GitHub, and the pipeline needs no standing cluster credentials for app deploys.
+- **Push deploys from GitHub Actions (`helm upgrade`):** simpler, but the pipeline would need cluster-admin access for every deploy, and drift in the cluster would go unnoticed.
+- **Flux:** a similar GitOps tool; the team chose Argo CD for its UI and ApplicationSets.
+- **Argo CD Image Updater:** rejected, because it would need a Git write key inside the cluster.
+
 ### Infrastructure as code – Terraform
-- **Why:** required by the brief (no click-ops); team experience; one tool for AWS resources and Helm releases; `plan` on every PR makes infrastructure changes reviewable (HC-2). State is kept in S3, versioned and encrypted, with S3 lock files.
-- **CloudFormation / CDK:** AWS-native, but less familiar to the team, and Helm releases would need a second tool.
+- **Why:** required by the brief (no click-ops); team experience; `plan` on every PR makes infrastructure changes reviewable (HC-2). State is kept in S3, versioned and encrypted, with S3 lock files. Terraform owns AWS and IAM; Argo CD owns what runs inside the cluster, because Terraform can't install into a cluster it creates in the same run.
+- **CloudFormation / CDK:** AWS-native, but less familiar to the team.
+
+### Workload AWS access – EKS Pod Identity
+- **Why:** each add-on or service gets its own IAM role, linked to its Kubernetes service account. The trust policy doesn't name the cluster, so roles survive the frequent cluster rebuilds, and the pipeline doesn't need rights to create an OIDC provider per cluster. Every role carries the environment's permissions boundary.
+- **IRSA:** the earlier standard; needs an OIDC provider per cluster and trust policies tied to it, which break on every rebuild.
+- **Node instance role:** every pod on a node would share the same permissions; nodes block pod access to instance metadata (IMDSv2, hop limit 1).
 
 ### Secrets – AWS Secrets Manager + External Secrets Operator
 - **Why:** KMS-encrypted, access controlled and logged by IAM and CloudTrail, integrates with RDS-managed master secrets, supports rotation. External Secrets copies values into Kubernetes Secrets at runtime, so nothing sensitive is in Git, Helm values or images.
@@ -54,7 +67,7 @@ Requirement IDs refer to `docs/requirements.md`; decisions with wider impact hav
 - **NGINX Ingress behind an NLB:** more control, but one more component to run and patch, and TLS certificates to manage in the cluster.
 
 ### Security scanning – Trivy, checkov, gitleaks
-- **Why:** open-source, run inside GitHub Actions, and fail the build on CRITICAL findings that have a fix (HIGH findings are reported in CI and in ECR's scan on push, not blocking, because the application is unmodified upstream code). Trivy covers dependencies and images, checkov covers Terraform, gitleaks covers committed secrets. No code or results are sent to a third-party SaaS.
+- **Why:** open-source, run inside GitHub Actions, and fail the build on findings. Trivy fails on CRITICAL findings that have a fix (HIGH findings are reported in CI and in ECR's scan on push, not blocking, because the application is unmodified upstream code); checkov fails on any failed check, with exceptions written next to the resource. Trivy covers dependencies and images, checkov covers Terraform, gitleaks covers committed secrets. No code or results are sent to a third-party SaaS.
 - **Snyk:** strong vulnerability data, but a SaaS service that receives our dependency data.
 - **Amazon Inspector:** useful for images already in ECR, but it scans after the push, while we want the gate to block the push.
 

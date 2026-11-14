@@ -1,9 +1,10 @@
 # One multi-region trail for the account (ADR-004). The account is shared, so it records every
-# group's management events, including our CI roles' AssumeRoleWithWebIdentity with session names
-# ci-<run id>-<attempt> that link back to the GitHub run.
+# group's write management events. Our CI roles' calls carry session names ci-<run id>-<attempt>
+# that link back to the GitHub run (AssumeRoleWithWebIdentity itself is a read event, so it's only
+# recorded with include_read_management_events = true).
 resource "aws_cloudtrail" "this" {
   #checkov:skip=CKV_AWS_252:No SNS topic per log file; delivery errors are watched with an alarm (INF-17)
-  #checkov:skip=CKV2_AWS_10:CloudWatch Logs integration comes with the console-write alarm in INF-11
+  #checkov:skip=CKV2_AWS_10:No CloudWatch Logs copy: console-write alerts use EventBridge (modules/console-alert, INF-11), which needs no log ingestion
   name                          = local.trail_name
   s3_bucket_name                = aws_s3_bucket.audit.id
   is_multi_region_trail         = true

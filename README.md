@@ -77,6 +77,24 @@ In a brand-new account the state bucket doesn't exist yet: comment out the block
 State buckets are protected by `prevent_destroy` and a bucket policy that denies `s3:DeleteBucket`
 and `s3:DeleteObjectVersion` to everyone, so they outlive environment teardowns.
 
+To receive console-write alerts (below), set an address when applying bootstrap and accept the
+confirmation email AWS sends: `export TF_VAR_alert_email=<address>`.
+
+## Region and change guardrails
+
+Data residency (HC-1, ADR-006) and "no direct console changes" (HC-2) are enforced in three places:
+
+| Guardrail | Where | What it stops |
+|---|---|---|
+| Region validation | `variable "region"` in `bootstrap/` and every `envs/*` root | Terraform refuses any region other than `us-east-1` |
+| Region deny | `DenyOutsideApprovedRegion` in `modules/iam-ci/guardrails.tf`, on every CI role and every workload permissions boundary | Any API call outside `us-east-1` (global services such as IAM excepted) is denied, even if code asks for it |
+| Console-write alert | `modules/console-alert`, applied from `bootstrap/` | A team member changing something in the AWS console: EventBridge matches the CloudTrail event and emails who, what, where and when |
+
+The alert watches the team's own IAM users only (`team_iam_users` in `bootstrap/variables.tf`):
+other groups share this account and use the console all the time. Console *views* don't alert,
+only write calls. The rule runs in `us-east-1`, where our resources and global services such as
+IAM are recorded.
+
 ## Pipeline
 
 From a change on a laptop to production. `bootstrap/` is the only layer applied by hand; everything
@@ -118,3 +136,26 @@ If prod has no changes, the run ends after the prod plan and asks for no approva
 
 Every AWS call from the pipeline uses the role session name `ci-<run id>-<attempt>`, so CloudTrail
 events link back to the GitHub run, its commit and its approver.
+
+## Cost controls
+
+Monthly estimate: `docs/cost-estimate.md` (DOC-05).
+
+**Tags.** Every resource carries `Project`, `Team`, `Environment`, `ManagedBy` and `Stack`: from the
+provider's `default_tags` for Terraform resources, the node launch template for EC2 instances,
+volumes and ENIs, and `defaultTags` on the AWS Load Balancer Controller for ALBs, target groups and
+their security groups. `Team = g4` also lets the CI roles tell our resources from other groups' in
+the shared account.
+
+**Staging teardown.** `.github/workflows/teardown.yml` destroys staging every day at 21:00 SGT, and
+on demand with **Run workflow**. It first stops Argo CD and removes the workload namespaces, so the
+LB Controller deletes its ALBs and the EBS CSI driver deletes the volumes, then runs
+`terraform destroy`. Bring staging back with **Run workflow** on `tf-apply` (apply staging, then
+Argo CD installs everything else). Running staging for working hours only costs about USD 90 a
+month instead of about USD 280 (DOC-05).
+
+**Budgets alert: not available.** The training account's learner policy explicitly denies AWS
+Budgets and Cost Explorer (`budgets:*`, `ce:*`), and billing is handled by the organisation's
+management account, so a Budgets alert per `Environment` tag can't be created from this account.
+Spend is controlled with the tags above, the teardown and the estimate in DOC-05; in a real account,
+an AWS Budgets alert on `Environment = prod` and `Environment = staging` would be added in `bootstrap/`.
