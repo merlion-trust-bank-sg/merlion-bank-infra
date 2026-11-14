@@ -1,0 +1,84 @@
+# Tear staging down every evening, and on demand (INF-18, NFR-7).
+#
+# Why: staging costs about USD 0.38 an hour (DOC-05), and the training account's nightly cleanup
+# deletes resources behind Terraform's back, leaving state that no longer matches AWS. A clean
+# destroy before that cleanup saves the cost and keeps the next `tf-apply` (Run workflow) working.
+#
+# Order matters: things Kubernetes created in AWS (ALBs from Ingresses, EBS volumes from PVCs) aren't
+# in Terraform state and would block the VPC delete or be left behind, so they go first.
+#
+# Bring staging back with the tf-apply workflow's "Run workflow" button (apply staging + Argo CD).
+name: teardown
+
+on:
+  schedule:
+    - cron: "0 13 * * *" # 21:00 SGT every day, before the training account's nightly cleanup
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  teardown-staging:
+    name: teardown staging
+    runs-on: ubuntu-latest
+    environment: staging # main only; same role as apply staging
+    concurrency:
+      group: tf-staging # never at the same time as tf-apply's staging job
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: AWS login + Terraform init (staging, deploy role)
+        uses: ./.github/actions/terraform-env
+        with:
+          role: g4-merlion-ci-staging
+          workdir: envs/staging
+
+      - name: Find the cluster
+        id: cluster
+        working-directory: envs/staging
+        run: |
+          name="$(terraform output -raw eks_cluster_name 2>/dev/null || true)"
+          if [ -n "$name" ] && aws eks describe-cluster --name "$name" >/dev/null 2>&1; then
+            aws eks update-kubeconfig --name "$name" --alias staging >/dev/null
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No running cluster: skipping the Kubernetes clean-up"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Argo CD would recreate what we delete below (self-heal), so stop its controller first
+      - name: Stop Argo CD syncing
+        if: steps.cluster.outputs.exists == 'true'
+        run: kubectl --context staging -n argocd scale statefulset argocd-application-controller --replicas=0 || true
+
+      # Removing the workload namespaces removes their Ingresses (the LB Controller then deletes the
+      # ALBs) and PVCs (the EBS CSI driver deletes the volumes). Controllers in kube-system stay up
+      # until this has finished. external-dns stays up too: it removes our record from the course's
+      # shared zone once the Ingress is gone (policy: sync), and it can't do that if it's deleted first.
+      - name: Remove workloads that own AWS resources
+        if: steps.cluster.outputs.exists == 'true'
+        run: |
+          keep='^(kube-system|kube-public|kube-node-lease|default|argocd|external-dns)$'
+          for ns in $(kubectl --context staging get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+            if ! echo "$ns" | grep -Eq "$keep"; then
+              echo "Deleting namespace $ns"
+              kubectl --context staging delete namespace "$ns" --wait=false
+            fi
+          done
+          kubectl --context staging delete ingress --all --all-namespaces --wait=false || true
+          kubectl --context staging wait --for=delete ingress --all --all-namespaces --timeout=10m || true
+          kubectl --context staging wait --for=delete pv --all --timeout=10m || true
+          # external-dns syncs every minute; give it two rounds to delete the record
+          sleep 120
+
+      - name: Terraform destroy (staging)
+        working-directory: envs/staging
+        run: terraform destroy -auto-approve -lock-timeout=5m
