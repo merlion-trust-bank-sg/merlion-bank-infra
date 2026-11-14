@@ -18,7 +18,7 @@ spec:
     metadata:
       name: loki
     spec:
-      project: default
+      project: platform # deploy/bootstrap/projects.yaml
       source:
         repoURL: https://grafana.github.io/helm-charts
         chart: loki

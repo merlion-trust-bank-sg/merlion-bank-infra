@@ -17,7 +17,7 @@ spec:
     metadata:
       name: kube-prometheus-stack
     spec:
-      project: default
+      project: platform # deploy/bootstrap/projects.yaml
       source:
         repoURL: https://prometheus-community.github.io/helm-charts
         chart: kube-prometheus-stack

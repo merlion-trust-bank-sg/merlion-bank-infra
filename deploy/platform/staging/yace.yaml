@@ -18,7 +18,7 @@ spec:
     metadata:
       name: yace
     spec:
-      project: default
+      project: platform # deploy/bootstrap/projects.yaml
       source:
         repoURL: https://prometheus-community.github.io/helm-charts
         chart: prometheus-yet-another-cloudwatch-exporter
