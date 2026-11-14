@@ -46,3 +46,8 @@ output "audit_kms_key_arn" {
   description = "Writers of deploy records need kms:GenerateDataKey on this key"
   value       = module.audit.kms_key_arn
 }
+
+output "console_alert_topic_arn" {
+  description = "SNS topic for console-write alerts (INF-11)"
+  value       = module.console_alert.topic_arn
+}

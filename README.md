@@ -77,6 +77,24 @@ In a brand-new account the state bucket doesn't exist yet: comment out the block
 State buckets are protected by `prevent_destroy` and a bucket policy that denies `s3:DeleteBucket`
 and `s3:DeleteObjectVersion` to everyone, so they outlive environment teardowns.
 
+To receive console-write alerts (below), set an address when applying bootstrap and accept the
+confirmation email AWS sends: `export TF_VAR_alert_email=<address>`.
+
+## Region and change guardrails
+
+Data residency (HC-1, ADR-006) and "no direct console changes" (HC-2) are enforced in three places:
+
+| Guardrail | Where | What it stops |
+|---|---|---|
+| Region validation | `variable "region"` in `bootstrap/` and every `envs/*` root | Terraform refuses any region other than `us-east-1` |
+| Region deny | `DenyOutsideApprovedRegion` in `modules/iam-ci/guardrails.tf`, on every CI role and every workload permissions boundary | Any API call outside `us-east-1` (global services such as IAM excepted) is denied, even if code asks for it |
+| Console-write alert | `modules/console-alert`, applied from `bootstrap/` | A team member changing something in the AWS console: EventBridge matches the CloudTrail event and emails who, what, where and when |
+
+The alert watches the team's own IAM users only (`team_iam_users` in `bootstrap/variables.tf`):
+other groups share this account and use the console all the time. Console *views* don't alert,
+only write calls. The rule runs in `us-east-1`, where our resources and global services such as
+IAM are recorded.
+
 ## Pipeline
 
 From a change on a laptop to production. `bootstrap/` is the only layer applied by hand; everything
