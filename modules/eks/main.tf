@@ -14,9 +14,11 @@ resource "aws_cloudwatch_log_group" "cluster" {
   retention_in_days = var.cluster_log_retention_days
   kms_key_id        = var.logs_kms_key_arn
 
-  # It holds the Kubernetes audit log (HC-3): a teardown leaves it in place instead of deleting it
-  # (the pipeline is also denied DeleteLogGroup). A rebuild reuses it; import it first if it's left over.
-  skip_destroy = true
+  # Prod: a teardown leaves the group (and its year of control-plane logs) in place, and the pipeline
+  # can't delete it (DenyEksLogTampering in modules/iam-ci). A rebuild must import the leftover group
+  # first. Staging is torn down every night, so its group is deleted with it; the copy that has to
+  # last a year is the one in the Object Lock bucket (audit_export).
+  skip_destroy = var.protect_log_group
 }
 
 resource "aws_eks_cluster" "this" {

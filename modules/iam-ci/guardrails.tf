@@ -105,11 +105,12 @@ data "aws_iam_policy_document" "protect_bootstrap_common" {
     resources   = [var.audit_kms_key_arn]
   }
 
-  # EKS control-plane logs (incl. the Kubernetes audit log, HC-3). The pipeline creates the log group
-  # but can't delete it, its streams or the export to the audit bucket. Tearing an environment down
-  # leaves the log group behind (skip_destroy in modules/eks). PutRetentionPolicy stays allowed:
-  # Terraform sets retention right after creating the group; modules/eks validates it's at least a
-  # year, and the copy in the Object Lock bucket doesn't depend on it.
+  # Prod's EKS control-plane logs (incl. the Kubernetes audit log, HC-3). The pipeline creates the log
+  # group but can't delete it, its streams or the export to the audit bucket; tearing prod down leaves
+  # the group behind (protect_log_group in envs/prod). Staging's isn't covered: it's destroyed every
+  # night, and the one-year copy is in the Object Lock bucket either way. PutRetentionPolicy stays
+  # allowed: Terraform sets retention right after creating the group; modules/eks validates it's at
+  # least a year.
   statement {
     sid    = "DenyEksLogTampering"
     effect = "Deny"

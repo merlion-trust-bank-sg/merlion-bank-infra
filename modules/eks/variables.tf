@@ -96,3 +96,13 @@ variable "audit_export" {
   })
   default = null
 }
+
+variable "protect_log_group" {
+  description = <<-EOT
+    Keep the control-plane log group when the environment is destroyed (skip_destroy). For prod, which
+    is only torn down deliberately. Must match the environments DenyEksLogTampering covers in
+    modules/iam-ci (prod only), or a destroy fails with AccessDenied on the log group.
+  EOT
+  type        = bool
+  default     = false
+}

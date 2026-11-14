@@ -79,6 +79,13 @@ jobs:
           # external-dns syncs every minute; give it two rounds to delete the record
           sleep 120
 
+      # The Kubernetes audit log reaches the Object Lock bucket through Firehose, which buffers up to
+      # 5 minutes (modules/eks/audit_export.tf). The destroy deletes the stream, so wait for the last
+      # buffer to be delivered: the clean-up above is the last thing the audit log should record.
+      - name: Let the audit log export flush
+        if: steps.cluster.outputs.exists == 'true'
+        run: sleep 330
+
       - name: Terraform destroy (staging)
         working-directory: envs/staging
         run: terraform destroy -auto-approve -lock-timeout=5m
