@@ -61,6 +61,15 @@ data "aws_iam_policy_document" "protect_bootstrap" {
     )
   }
 
+  # The audit key: encrypt new deploy records (kms:GenerateDataKey), nothing else. No decrypt (so the
+  # audit logs can't be read back), and no changes to the key; the key policy also denies those.
+  statement {
+    sid         = "AuditKeyEncryptOnly"
+    effect      = "Deny"
+    not_actions = ["kms:GenerateDataKey", "kms:DescribeKey"]
+    resources   = [var.audit_kms_key_arn]
+  }
+
   # Write deploy records, never read the audit trail back or remove anything from it
   statement {
     sid    = "DenyAuditTampering"
@@ -149,10 +158,12 @@ data "aws_iam_policy_document" "env_fence" {
     sid     = "DenyOtherEnvironmentByTag"
     effect  = "Deny"
     actions = ["*"]
-    # The ECR repositories are shared by both environments (same image digest in staging and prod) and
-    # tagged "shared" by bootstrap. Without this, nodes couldn't pull images. Pushes and repository
-    # changes stay denied by protect_bootstrap and the workload boundary.
-    not_resources = [local.ecr_repo_arn]
+    # Shared by both environments and tagged "shared" by bootstrap, so exempted here:
+    # - the ECR repositories (same image digest in staging and prod): without this, nodes couldn't
+    #   pull images. Pushes and repository changes stay denied by protect_bootstrap and the boundary.
+    # - the audit key: deploy records are encrypted with it, so writing one needs kms:GenerateDataKey.
+    #   The key policy denies our roles any change to the key, and nothing grants them decrypt.
+    not_resources = [local.ecr_repo_arn, var.audit_kms_key_arn]
     condition {
       test     = "Null"
       variable = "aws:ResourceTag/Environment"

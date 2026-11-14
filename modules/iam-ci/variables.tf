@@ -88,3 +88,8 @@ variable "dns_names" {
     error_message = "Only staging and prod are supported."
   }
 }
+
+variable "audit_kms_key_arn" {
+  description = "The audit trail's KMS key (modules/audit). Deploy roles need it to write deploy records, so the environment fence exempts it."
+  type        = string
+}

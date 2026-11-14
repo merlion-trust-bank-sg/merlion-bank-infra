@@ -29,7 +29,8 @@ resource "aws_cloudtrail" "this" {
   }
 
   # Data events on the audit bucket itself, limited to reads, deletes and retention changes.
-  # CloudTrail's own PutObject deliveries are left out, so the trail doesn't log its own writes.
+  # PutObject is left out here, so the trail doesn't log its own deliveries; deploy record writes
+  # are logged by the next selector.
   advanced_event_selector {
     name = "Audit bucket: reads, deletes, retention changes"
 
@@ -51,6 +52,33 @@ resource "aws_cloudtrail" "this" {
     field_selector {
       field  = "eventName"
       equals = ["GetObject", "DeleteObject", "DeleteObjects", "PutObjectRetention", "PutObjectLegalHold"]
+    }
+  }
+
+  # Deploy record writes (deploys/<env>/), so CloudTrail shows which role and ci-<run id> session
+  # wrote each one. Only this prefix: CloudTrail delivers under AWSLogs/, and logging its own writes
+  # would add an event for every delivery, endlessly.
+  advanced_event_selector {
+    name = "Audit bucket: deploy record writes"
+
+    field_selector {
+      field  = "eventCategory"
+      equals = ["Data"]
+    }
+
+    field_selector {
+      field  = "resources.type"
+      equals = ["AWS::S3::Object"]
+    }
+
+    field_selector {
+      field       = "resources.ARN"
+      starts_with = ["${aws_s3_bucket.audit.arn}/deploys/"]
+    }
+
+    field_selector {
+      field  = "eventName"
+      equals = ["PutObject"]
     }
   }
 

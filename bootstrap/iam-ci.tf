@@ -30,6 +30,9 @@ module "iam_ci" {
   # under its own. From modules/dns, which the envs read too, so the names always match.
   dns_zone_id = module.dns.zone_id
   dns_names   = module.dns.hostnames
+
+  # Deploy records are encrypted with the audit key; the env fence exempts it (modules/iam-ci)
+  audit_kms_key_arn = module.audit.kms_key_arn
 }
 
 module "dns" {

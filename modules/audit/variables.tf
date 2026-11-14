@@ -12,7 +12,7 @@ variable "region" {
 }
 
 variable "retention_days" {
-  description = "Object Lock default retention (governance mode). HC-3 needs at least 365 days"
+  description = "Object Lock default retention (governance mode). HC-3 needs at least 365 days. The bucket policy denies changing it (PutBucketObjectLockConfiguration) to everyone: to change it later, remove that statement first, in a reviewed PR"
   type        = number
   default     = 365
 
@@ -23,7 +23,7 @@ variable "retention_days" {
 }
 
 variable "include_read_management_events" {
-  description = "Record read-only management events too (ADR-004). The account is shared, so this also records other groups' reads; false keeps write events only, at a fraction of the cost"
+  description = "Record read-only management events too. Off: the account already has a trail, so ours is a paid copy, and in this shared account reads are mostly other groups' and controllers' polling. Write events (who changed what) are what HC-2 needs"
   type        = bool
-  default     = true
+  default     = false
 }

@@ -89,6 +89,8 @@ data "aws_iam_policy_document" "audit_key" {
   }
 }
 
+# Bootstrap's default tags mark it Environment = shared; modules/iam-ci exempts it from the env fence
+# (encrypt only), so both env pipelines can write deploy records
 resource "aws_kms_key" "audit" {
   description             = "${var.name} audit trail (CloudTrail logs, deploy records)"
   enable_key_rotation     = true

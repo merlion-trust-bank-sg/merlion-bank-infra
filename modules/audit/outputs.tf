@@ -11,6 +11,6 @@ output "trail_arn" {
 }
 
 output "kms_key_arn" {
-  description = "Writers of deploy records and EKS audit logs need kms:GenerateDataKey on this key"
+  description = "Writers of deploy records need kms:GenerateDataKey on this key"
   value       = aws_kms_key.audit.arn
 }
