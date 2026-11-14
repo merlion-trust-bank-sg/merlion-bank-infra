@@ -3,7 +3,7 @@
 # ci-<run id>-<attempt> that link back to the GitHub run.
 resource "aws_cloudtrail" "this" {
   #checkov:skip=CKV_AWS_252:No SNS topic per log file; delivery errors are watched with an alarm (INF-17)
-  #checkov:skip=CKV2_AWS_10:CloudWatch Logs integration comes with the console-write alarm in INF-11
+  #checkov:skip=CKV2_AWS_10:No CloudWatch Logs copy: console-write alerts use EventBridge (modules/console-alert, INF-11), which needs no log ingestion
   name                          = local.trail_name
   s3_bucket_name                = aws_s3_bucket.audit.id
   is_multi_region_trail         = true
