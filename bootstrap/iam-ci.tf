@@ -25,4 +25,13 @@ module "iam_ci" {
 
   state_buckets      = { for k, b in aws_s3_bucket.state : k => b.id }
   state_kms_key_arns = { for k, key in aws_kms_key.state : k => key.arn }
+
+  # The app's hostname per env, in the course's shared zone; each env pipeline may only change records
+  # under its own. From modules/dns, which the envs read too, so the names always match.
+  dns_zone_id = module.dns.zone_id
+  dns_names   = module.dns.hostnames
+}
+
+module "dns" {
+  source = "../modules/dns"
 }

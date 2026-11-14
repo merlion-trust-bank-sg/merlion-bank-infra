@@ -10,11 +10,25 @@ state bucket and KMS key, per-environment CI roles, and IAM guardrails (ADR-002)
 
 | Path | What | Applied by |
 |---|---|---|
-| `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); audit trail (`modules/audit`, ADR-004); later ECR | admin, once (see below) |
-| `modules/` | kms, network, eks, rds, ecr, secrets, iam-ci, audit, addons | - |
+| `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); ECR; audit trail (`modules/audit`, ADR-004) | admin, once (see below) |
+| `modules/` | kms, network, eks, rds, ecr, secrets, iam-ci, audit, addons, dns | - |
 | `envs/{staging,prod}` | one root per environment, own state bucket and key | **pipeline only** |
 | `.github/workflows/tf-plan.yml` | PR: gitleaks, fmt, validate, tflint, checkov, staging plan | GitHub Actions |
 | `.github/workflows/tf-apply.yml` | main: apply staging -> plan prod -> approval -> apply prod | GitHub Actions |
+
+## Staging
+
+**https://merlion-staging.sctp-sandbox.com** (prod will be `merlion.sctp-sandbox.com`). The ALB only
+answers for this hostname: its own `*.elb.amazonaws.com` address returns 404.
+
+- `sctp-sandbox.com` is the course's shared Route 53 zone (`Z00541411T1NGPV97B5C0`). The **instructor
+  allows groups to add their own records** to it. Other groups have records there, so IAM limits our
+  CI roles and ExternalDNS to names under our own hostnames.
+- The hostnames and the zone ID are defined once, in `modules/dns`. Bootstrap gives each CI role
+  permission for its env's hostname; the env uses the same values for its certificate and ExternalDNS.
+- Changing a hostname: change `modules/dns`, apply **bootstrap first** (admin), then let the pipeline
+  apply the env. In the other order, the env apply fails with AccessDenied on the certificate's
+  validation record.
 
 ## CI roles
 

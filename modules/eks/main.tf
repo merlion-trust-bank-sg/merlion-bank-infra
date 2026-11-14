@@ -128,3 +128,18 @@ resource "aws_eks_node_group" "default" {
     ignore_changes = [scaling_config[0].desired_size]
   }
 }
+
+# EKS creates the node group's Auto Scaling group itself and doesn't copy our tags onto it, so tag it
+# here. Without the Project tag the training account's nightly cleanup deletes the group, which
+# terminates every node. Not propagated: the launch template already tags the instances.
+resource "aws_autoscaling_group_tag" "node" {
+  for_each = data.aws_default_tags.current.tags
+
+  autoscaling_group_name = aws_eks_node_group.default.resources[0].autoscaling_groups[0].name
+
+  tag {
+    key                 = each.key
+    value               = each.value
+    propagate_at_launch = false
+  }
+}
