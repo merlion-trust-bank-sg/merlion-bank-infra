@@ -33,7 +33,7 @@ variable "enabled" {
     deletion_protection = false in rds.tf in the same PR (each database keeps a dated final snapshot).
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "team" {
