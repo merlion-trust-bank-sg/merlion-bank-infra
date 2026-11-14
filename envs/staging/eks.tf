@@ -28,5 +28,6 @@ module "eks" {
   admin_principal_arns = [
     "arn:aws:iam::${var.account_id}:role/${var.team}-merlion-ci-staging", # the staging pipeline
     "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh",           # SRE, kubectl access
+    "arn:aws:iam::${var.account_id}:user/students/ce13/paulyapsl",        # SRE, kubectl access
   ]
 }
