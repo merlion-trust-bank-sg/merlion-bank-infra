@@ -13,6 +13,10 @@ resource "aws_cloudwatch_log_group" "cluster" {
   name              = "/aws/eks/${var.name}/cluster"
   retention_in_days = var.cluster_log_retention_days
   kms_key_id        = var.logs_kms_key_arn
+
+  # It holds the Kubernetes audit log (HC-3): a teardown leaves it in place instead of deleting it
+  # (the pipeline is also denied DeleteLogGroup). A rebuild reuses it; import it first if it's left over.
+  skip_destroy = true
 }
 
 resource "aws_eks_cluster" "this" {

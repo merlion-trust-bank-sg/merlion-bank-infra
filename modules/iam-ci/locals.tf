@@ -36,6 +36,12 @@ locals {
     "arn:aws:cloudwatch:${local.r}:${local.a}:alarm:${local.p}-${e}-*",
   ] }
 
+  # Every env's EKS control-plane log group (and its streams)
+  eks_log_group_arns = [
+    "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-*",
+    "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-*:*",
+  ]
+
   # Created by other bootstrap PRs; protected by name so the rules hold as soon as they exist
   audit_bucket = "${local.p}-audit-${local.a}"
   ecr_repo_arn = "arn:aws:ecr:${local.r}:${local.a}:repository/merlion/*"

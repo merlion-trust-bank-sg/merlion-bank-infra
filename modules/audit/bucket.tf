@@ -1,6 +1,7 @@
-# Audit bucket: CloudTrail logs (AWSLogs/) and pipeline deploy records (deploys/<env>/). EKS audit
-# logs stay in CloudWatch (365 days, modules/eks); exporting them here would need Firehose. Object Lock in governance mode, with deletes and governance bypass denied
-# to everyone by the bucket policy (ADR-004). The name must match local.audit_bucket in modules/iam-ci,
+# Audit bucket: CloudTrail logs (AWSLogs/), pipeline deploy records (deploys/<env>/) and the
+# Kubernetes audit log of each cluster (eks-audit/<cluster>/, via Firehose from modules/eks).
+# Object Lock in governance mode, with deletes and governance bypass denied to everyone by the bucket
+# policy (ADR-004). The name must match local.audit_bucket in modules/iam-ci,
 # whose guardrails already protect it by name.
 locals {
   bucket_name = "${var.name}-audit-${var.account_id}"
