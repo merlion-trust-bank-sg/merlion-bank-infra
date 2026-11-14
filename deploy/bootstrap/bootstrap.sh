@@ -22,6 +22,12 @@ ARGOCD_CHART_VERSION="10.17.0"
 
 # Facts only Terraform knows. The VPC is recreated on every rebuild, so its ID can't live in Git.
 TF="terraform -chdir=$ROOT/envs/$ENV"
+
+# Prod can be switched off (envs/prod var.enabled): then there's no cluster to bootstrap
+if [ "$($TF output -raw enabled 2>/dev/null || echo true)" = false ]; then
+  echo "$ENV is switched off (envs/$ENV enabled = false): nothing to bootstrap."
+  exit 0
+fi
 CLUSTER="$($TF output -raw eks_cluster_name)"
 VPC_ID="$($TF output -raw vpc_id)"
 APP_SECRETS="$($TF output -json app_secrets)"

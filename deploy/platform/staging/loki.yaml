@@ -1,0 +1,96 @@
+# Loki in single-binary mode: logs from every pod, chunks and index in the S3 bucket
+# <cluster name>-loki (us-east-1, KMS), reached through the Pod Identity role on service account
+# "loki" (Terraform, modules/observability). Logs are kept 365 days (ADR-003).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: staging
+  template:
+    metadata:
+      name: loki
+    spec:
+      project: platform # deploy/bootstrap/projects.yaml
+      source:
+        repoURL: https://grafana.github.io/helm-charts
+        chart: loki
+        targetRevision: 7.5.0
+        helm:
+          valuesObject:
+            deploymentMode: SingleBinary
+            serviceAccount:
+              name: loki
+            loki:
+              # One tenant: only our own cluster writes here
+              auth_enabled: false
+              commonConfig:
+                replication_factor: 1
+              storage:
+                type: s3
+                bucketNames:
+                  chunks: '{{index .metadata.annotations "cluster_name"}}-loki'
+                  ruler: '{{index .metadata.annotations "cluster_name"}}-loki'
+                  admin: '{{index .metadata.annotations "cluster_name"}}-loki'
+                s3:
+                  region: '{{index .metadata.annotations "region"}}'
+              schemaConfig:
+                configs:
+                  - from: "2024-04-01"
+                    store: tsdb
+                    object_store: s3
+                    schema: v13
+                    index:
+                      prefix: index_
+                      period: 24h
+              limits_config:
+                retention_period: 8760h # 365 days
+              compactor:
+                retention_enabled: true
+                delete_request_store: s3
+            singleBinary:
+              replicas: 1
+              persistence:
+                storageClass: gp3-encrypted
+                size: 10Gi
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 512Mi
+                limits:
+                  memory: 1Gi
+            # Simple-scalable components off in single-binary mode
+            read:
+              replicas: 0
+            write:
+              replicas: 0
+            backend:
+              replicas: 0
+            # Memcached caches need several GiB of memory; not worth it at this log volume
+            chunksCache:
+              enabled: false
+            resultsCache:
+              enabled: false
+            # Grafana and Alloy talk to the Loki service directly
+            gateway:
+              enabled: false
+            lokiCanary:
+              enabled: false
+            test:
+              enabled: false
+      destination:
+        server: '{{.server}}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

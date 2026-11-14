@@ -29,6 +29,13 @@ spec:
             # Pods can't reach instance metadata (hop limit 1), so region and VPC are passed in
             region: '{{index .metadata.annotations "region"}}'
             vpcId: '{{index .metadata.annotations "vpc_id"}}'
+            # Same cost tags as the Terraform-managed resources (INF-18), on every ALB, target group
+            # and security group the controller creates
+            defaultTags:
+              Project: merlion-trust-bank
+              Team: g4
+              Environment: '{{.metadata.labels.environment}}'
+              ManagedBy: aws-load-balancer-controller
             serviceAccount:
               name: aws-load-balancer-controller
             # The ALBs, target groups and security groups the controller creates aren't Terraform

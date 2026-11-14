@@ -29,7 +29,11 @@ bank:
 services:
   frontend:
     image: { name: frontend, digest: "" }
+    # Used only when hpa.enabled is false; otherwise the HPA sets the count
     replicas: 2
+    # Every page load goes through the frontend, so it scales with traffic (NFR-5). Target is a share of
+    # the CPU request below. 4 at most: each extra pod takes one of the cluster's pod slots.
+    hpa: { enabled: true, minReplicas: 2, maxReplicas: 4, targetCPU: 70 }
     port: 8080
     servicePort: 80
     kind: python
