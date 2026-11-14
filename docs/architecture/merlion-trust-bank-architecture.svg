@@ -18,6 +18,9 @@
 .m{font-size:11px;font-family:Consolas, monospace;fill:#4A5058}
 .arr{stroke:#2B2F33;stroke-width:1.3;fill:none}
 .rarr{stroke:#B8323A;stroke-width:1.5;fill:none}
+.plan{fill:#FFFFFF;stroke:#8A9097;stroke-width:1.4;stroke-dasharray:6 4}
+.parr{stroke:#B8323A;stroke-width:1.5;fill:none;stroke-dasharray:6 4}
+.pl{font-size:11px;font-family:Consolas, monospace;font-weight:600;fill:#7A5C00}
 </style>
 </defs>
 <rect width="1600" height="1100" fill="#FFFFFF"/>
@@ -46,19 +49,19 @@
 <text class="s" x="45" y="249">Branch protection · 1 review · Jira SCRUM</text>
 <rect class="box" x="45" y="262" width="270" height="85" rx="4"/>
 <text class="t2" x="58" y="282">merlion-bank-app</text>
-<text class="s" x="58" y="301">build → SCA → image scan → ECR</text>
-<text class="s" x="58" y="319">staging auto on merge + smoke tests</text>
-<text class="s" x="58" y="337">production: manual approval</text>
+<text class="s" x="58" y="301">build → SCA → image scan → ECR (ci-build)</text>
+<text class="s" x="58" y="319">staging promotion PR, auto-merged <tspan class="pl">PLANNED</tspan></text>
+<text class="s" x="58" y="337">prod digest: reviewed PR · no cluster access</text>
 <rect class="box" x="45" y="357" width="270" height="85" rx="4"/>
 <text class="t2" x="58" y="377">merlion-bank-infra</text>
-<text class="s" x="58" y="396">checkov → Terraform plan on PR</text>
-<text class="s" x="58" y="414">apply staging</text>
-<text class="s" x="58" y="432">production: manual approval</text>
+<text class="s" x="58" y="396">PR: checks + staging plan (ci-plan)</text>
+<text class="s" x="58" y="414">main: apply staging → prod plan → approval</text>
+<text class="s" x="58" y="432">deploy/ → Argo CD pulls from main (GitOps)</text>
 <line class="arr" x1="180" y1="455" x2="180" y2="478" marker-end="url(#a)"/>
 
 <rect class="box" x="30" y="480" width="300" height="58" rx="4"/>
 <text class="t" x="45" y="504">Security gates</text>
-<text class="s" x="45" y="525">Fail build on HIGH / CRITICAL</text>
+<text class="s" x="45" y="525">Trivy fixable CRITICAL · checkov · gitleaks</text>
 <line class="arr" x1="180" y1="538" x2="180" y2="561" marker-end="url(#a)"/>
 
 <rect class="red" x="30" y="563" width="300" height="58" rx="4"/>
@@ -66,21 +69,22 @@
 <text class="s" x="45" y="608">Short-lived creds, no stored keys</text>
 <line class="rarr" x1="330" y1="592" x2="378" y2="592" marker-end="url(#r)"/>
 
-<text class="s" x="30" y="645">gha-staging → staging account only</text>
-<text class="s" x="30" y="665">gha-prod → prod account, after approval</text>
+<text class="s" x="30" y="645">g4-merlion-ci-build / -plan / -prod-plan (read-only)</text>
+<text class="s" x="30" y="665">-staging / -prod: own env only; prod after approval</text>
 
 <text class="m" x="30" y="705" font-size="12">NOTE</text>
 <text class="s" x="30" y="725">CI run logs are stored by GitHub,</text>
 <text class="s" x="30" y="743">outside AWS. Keep customer data</text>
 <text class="s" x="30" y="761">and app logs out of CI output.</text>
 
-<rect class="box" x="30" y="900" width="300" height="58" rx="4"/>
-<text class="t" x="45" y="924">On-call engineer</text>
-<text class="s" x="45" y="945">Email + Telegram alerts</text>
+<rect class="plan" x="30" y="900" width="300" height="58" rx="4"/>
+<text class="t" x="45" y="924">On-call engineer <tspan class="pl">PLANNED</tspan></text>
+<text class="s" x="45" y="945">Email + Telegram alerts (INF-16)</text>
 
 <!-- ===== Production account ===== -->
 <rect class="frame" x="380" y="130" width="780" height="590" rx="4"/>
-<text class="t" x="1145" y="152" text-anchor="end">Production account · VPC across 2 AZs (us-east-1a / 1b)</text>
+<text class="pl" x="395" y="151">OFF BY DEFAULT (enabled = false)</text>
+<text class="t" x="1145" y="152" text-anchor="end">Production environment · VPC across 2 AZs (us-east-1a / 1b)</text>
 
 <!-- Public subnets -->
 <rect class="band" x="400" y="165" width="740" height="88"/>
@@ -94,18 +98,18 @@
 
 <!-- EKS private subnets -->
 <rect class="band" x="400" y="268" width="740" height="292"/>
-<text class="t" x="560" y="292">Amazon EKS · private subnets</text>
-<text class="s" x="560" y="312">add-ons: LB Controller · External Secrets (IRSA) · monitoring stack (below)</text>
+<text class="t" x="560" y="292">Amazon EKS · private subnets · 4 × t3.medium</text>
+<text class="s" x="560" y="312">Argo CD installs: LB Controller · External Secrets · monitoring (Pod Identity)</text>
 <text class="m" x="1132" y="292" text-anchor="end">pull · secrets</text>
 <line class="arr" x1="545" y1="240" x2="545" y2="398" marker-end="url(#a)"/>
 
 <rect class="teal" x="440" y="400" width="185" height="58" rx="4"/>
 <text class="tt" x="453" y="423">frontend</text>
-<text class="st" x="453" y="444">Python · 2+ replicas</text>
+<text class="st" x="453" y="444">Python · HPA 2–4 replicas</text>
 
 <rect class="box" x="415" y="478" width="160" height="52" rx="4"/>
 <text class="t2" x="427" y="498">VPC endpoints</text>
-<text class="s" x="427" y="517" font-size="11.5">ECR, S3, SM, Logs, STS</text>
+<text class="s" x="427" y="517" font-size="11.5">S3 gateway + 5 interface</text>
 
 <rect class="grp" x="650" y="335" width="205" height="162" rx="4"/>
 <text class="m" x="662" y="352">ACCOUNTS</text>
@@ -159,22 +163,22 @@
 
 <!-- ===== Right column ===== -->
 <rect class="frame" x="1180" y="130" width="380" height="250" rx="4"/>
-<text class="t" x="1195" y="154">Non-production · separate account</text>
+<text class="t" x="1195" y="154">Staging environment · same account</text>
 <rect class="box" x="1195" y="168" width="350" height="140" rx="4"/>
-<text class="t" x="1208" y="190">Staging account</text>
-<text class="s" x="1208" y="211">Same Terraform modules, smaller sizes</text>
-<text class="s" x="1208" y="229">EKS + RDS single-AZ</text>
-<text class="s" x="1208" y="247">Auto-deploy on merge to main + smoke tests</text>
+<text class="t" x="1208" y="190">Staging</text>
+<text class="s" x="1208" y="211">Same modules, smaller: 1 NAT, RDS single-AZ</text>
+<text class="s" x="1208" y="229">Own state bucket + KMS key, own CI role</text>
+<text class="s" x="1208" y="247">Auto-apply on merge · Argo CD syncs from main</text>
 <text class="s" x="1208" y="265">loadgenerator · synthetic data only</text>
-<text class="s" x="1208" y="283">Nodes → 0 and RDS stopped when idle</text>
-<text class="s" x="1195" y="336">No dev environment: PR checks (plan, scans)</text>
-<text class="s" x="1195" y="354">give fast feedback before merge (ADR-002).</text>
+<text class="s" x="1208" y="283">Torn down nightly, rebuilt by the pipeline</text>
+<text class="s" x="1195" y="336">Isolation in one account: per-env roles, name and</text>
+<text class="s" x="1195" y="354">tag denies, permissions boundary (ADR-002).</text>
 
 <rect class="frame" x="1180" y="400" width="380" height="320" rx="4"/>
 <text class="t" x="1195" y="424">Production platform services</text>
 <rect class="box" x="1195" y="438" width="350" height="50" rx="4"/>
 <text class="t" x="1208" y="458">Amazon ECR</text>
-<text class="s" x="1208" y="477">Immutable tags · scan on push · cross-account pull</text>
+<text class="s" x="1208" y="477">Immutable tags · scan on push · shared by both envs</text>
 <rect class="box" x="1195" y="498" width="350" height="50" rx="4"/>
 <text class="t" x="1208" y="518">Secrets Manager</text>
 <text class="s" x="1208" y="537">DB creds, JWT key pair → pods (External Secrets)</text>
@@ -182,9 +186,9 @@
 <text class="t" x="1208" y="578">AWS KMS</text>
 <text class="s" x="1208" y="597">CMKs for RDS, S3, logs, secrets</text>
 <rect class="red" x="1195" y="618" width="350" height="90" rx="4"/>
-<text class="t" x="1208" y="640">gha-prod role + Terraform state</text>
-<text class="s" x="1208" y="660">Trust: repo + environment production only</text>
-<text class="s" x="1208" y="678">State: S3 per account · versioned · KMS</text>
+<text class="t" x="1208" y="640">g4-merlion-ci-prod + Terraform state</text>
+<text class="s" x="1208" y="660">Trust: infra repo + environment production only</text>
+<text class="s" x="1208" y="678">State: S3 + KMS key per env · versioned</text>
 
 <!-- ===== Observability ===== -->
 <line class="arr" x1="600" y1="560" x2="600" y2="776"/>
@@ -193,8 +197,9 @@
 
 <rect class="frame" x="380" y="740" width="780" height="300" rx="4"/>
 <text class="t" x="395" y="765">Observability · self-hosted on EKS in us-east-1, no third-party SaaS</text>
+<text class="pl" x="1145" y="765" text-anchor="end">STAGING NOW · PROD PLANNED</text>
 <rect class="box" x="400" y="790" width="172" height="70" rx="4"/>
-<text class="t" x="412" y="812">Loki + Promtail</text>
+<text class="t" x="412" y="812">Loki + Alloy</text>
 <text class="s" x="412" y="832">logs from all pods</text>
 <text class="s" x="412" y="850">365-day retention</text>
 <rect class="box" x="587" y="790" width="172" height="70" rx="4"/>
@@ -208,30 +213,32 @@
 <rect class="red" x="961" y="790" width="172" height="70" rx="4"/>
 <text class="t" x="973" y="812">Alertmanager</text>
 <text class="s" x="973" y="832">SLO rules: avail., p95</text>
-<text class="s" x="973" y="850">→ email / Telegram</text>
+<text class="s" x="973" y="850">routing <tspan class="pl">PLANNED</tspan></text>
 
 <text class="s" x="400" y="900">SLIs: availability = 1 − ALB 5xx ratio (SLO 99.9%)</text>
 <text class="s" x="400" y="920">latency = p95 ALB target response time (SLO &lt; 500 ms)</text>
 <text class="s" x="400" y="950">Storage: Loki chunks → S3 bucket (us-east-1, KMS) · Prometheus → EBS volume</text>
-<text class="s" x="400" y="970">Stack: kube-prometheus-stack + Loki Helm charts in namespace monitoring</text>
+<text class="s" x="400" y="970">Stack: kube-prometheus-stack, Loki, Alloy, YACE via Argo CD, namespace monitoring</text>
 
-<path class="rarr" d="M1047 860 L1047 1015 L180 1015 L180 961" marker-end="url(#r)"/>
-<text class="m" x="430" y="1008">Alertmanager → email / Telegram · alert text contains no customer data</text>
+<path class="parr" d="M1047 860 L1047 1015 L180 1015 L180 961" marker-end="url(#r)"/>
+<text class="m" x="430" y="1008">planned: Alertmanager → email / Telegram · alert text contains no customer data</text>
 
 <!-- ===== Audit ===== -->
 <rect class="frame" x="1180" y="740" width="380" height="300" rx="4"/>
 <text class="t" x="1195" y="764">Audit · tamper-resistant</text>
 <rect class="box" x="1195" y="780" width="350" height="58" rx="4"/>
-<text class="t" x="1208" y="802">CloudTrail (both accounts)</text>
-<text class="s" x="1208" y="822">Every API call, incl. OIDC role sessions</text>
+<text class="t" x="1208" y="802">CloudTrail g4-merlion-trail (account-wide)</text>
+<text class="s" x="1208" y="822">Write management events + audit-bucket data events</text>
 <line class="arr" x1="1370" y1="838" x2="1370" y2="866" marker-end="url(#a)"/>
 <rect class="red" x="1195" y="868" width="350" height="58" rx="4"/>
-<text class="t" x="1208" y="890">S3 Object Lock bucket (log-archive)</text>
-<text class="s" x="1208" y="910">Governance mode · 1 year · bypass denied</text>
-<text class="s" x="1195" y="960">Also stores EKS audit logs (via Firehose)</text>
-<text class="s" x="1195" y="978">and pipeline deploy records (who, what, when).</text>
+<text class="t" x="1208" y="890">S3 Object Lock bucket (g4-merlion-audit)</text>
+<text class="s" x="1208" y="910">Governance · 365 days · deletes + bypass denied</text>
+<text class="s" x="1195" y="960">The pipeline can't change the trail.</text>
+<rect class="plan" x="1195" y="975" width="350" height="50" rx="4"/>
+<text class="s" x="1208" y="995">Deploy records (deploys/&lt;env&gt;/) · EKS audit</text>
+<text class="s" x="1208" y="1013">logs via Firehose <tspan class="pl">PLANNED</tspan></text>
 
 <!-- Footer -->
 <line x1="0" y1="1068" x2="1600" y2="1068" stroke="#D5D9DD" stroke-width="1"/>
-<text class="s" x="20" y="1088"><tspan fill="#B8323A" font-weight="600">Red</tspan> marks the us-east-1 data boundary and every point where a credential or approval controls access to production. <tspan fill="#2F7E7A" font-weight="600">Teal</tspan> boxes are the six Bank of Anthos services built from upstream source into our own images.</text>
+<text class="s" x="20" y="1088"><tspan fill="#B8323A" font-weight="600">Red</tspan> marks the us-east-1 data boundary and every point where a credential or approval controls access to production. <tspan fill="#2F7E7A" font-weight="600">Teal</tspan> boxes are the six Bank of Anthos services. <tspan fill="#7A5C00" font-weight="600">Dashed grey / PLANNED</tspan>: not built yet.</text>
 </svg>
