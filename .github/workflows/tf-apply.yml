@@ -159,3 +159,8 @@ jobs:
       - name: Terraform apply (prod, saved plan)
         working-directory: envs/prod
         run: terraform apply -lock-timeout=5m prod.tfplan
+
+      # As for staging: Argo CD is installed here, then installs the add-ons from deploy/platform/prod
+      # and the bank from deploy/values-prod.yaml. Re-running it changes nothing.
+      - name: Bootstrap Argo CD (prod)
+        run: deploy/bootstrap/bootstrap.sh prod

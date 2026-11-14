@@ -6,7 +6,7 @@ metadata:
   name: root
   namespace: argocd
 spec:
-  project: default
+  project: platform # deploy/bootstrap/projects.yaml
   source:
     repoURL: https://github.com/merlion-trust-bank-sg/merlion-bank-infra
     targetRevision: main

@@ -18,7 +18,7 @@ spec:
     metadata:
       name: aws-load-balancer-controller
     spec:
-      project: default
+      project: platform # deploy/bootstrap/projects.yaml
       source:
         repoURL: https://aws.github.io/eks-charts
         chart: aws-load-balancer-controller
@@ -31,6 +31,14 @@ spec:
             vpcId: '{{index .metadata.annotations "vpc_id"}}'
             serviceAccount:
               name: aws-load-balancer-controller
+            # The ALBs, target groups and security groups the controller creates aren't Terraform
+            # resources, so they don't get the provider's default tags. These match them, and the
+            # Project tag is what the training account's nightly cleanup skips (case-sensitive).
+            defaultTags:
+              Project: capstone-project-group-04
+              Team: g4
+              Environment: '{{.metadata.labels.environment}}'
+              ManagedBy: aws-load-balancer-controller
       destination:
         server: '{{.server}}'
         namespace: kube-system
