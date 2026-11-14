@@ -23,6 +23,18 @@ module "eks" {
 
   logs_kms_key_arn = module.logs_key[0].arn
 
+  # Prod's control-plane logs outlive a teardown, and the pipeline can't delete them. Tearing prod down
+  # leaves /aws/eks/g4-merlion-prod/cluster behind; bringing it back needs that group imported first
+  # (terraform import 'module.eks[0].aws_cloudwatch_log_group.cluster' /aws/eks/g4-merlion-prod/cluster).
+  protect_log_group = true
+
+  # Kubernetes audit log copied to the Object Lock audit bucket, where nobody can delete it (HC-3).
+  # Bucket and key are created by bootstrap (modules/audit).
+  audit_export = {
+    bucket_arn  = "arn:aws:s3:::${var.team}-merlion-audit-${var.account_id}"
+    kms_key_arn = data.aws_kms_alias.audit[0].target_key_arn
+  }
+
   # Created by bootstrap; every role this pipeline creates must carry it
   permissions_boundary_arn = "arn:aws:iam::${var.account_id}:policy/${local.name}-workload-boundary"
 
@@ -34,4 +46,11 @@ module "eks" {
   viewer_principal_arns = [
     "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh", # SRE / DevSecOps
   ]
+}
+
+# The audit key, by its alias (bootstrap, modules/audit)
+data "aws_kms_alias" "audit" {
+  count = local.enabled ? 1 : 0
+
+  name = "alias/${var.team}-merlion-audit"
 }

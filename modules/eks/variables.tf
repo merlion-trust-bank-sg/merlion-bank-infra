@@ -56,9 +56,14 @@ variable "node_disk_size_gb" {
 }
 
 variable "cluster_log_retention_days" {
-  description = "Retention of the control-plane logs"
+  description = "Retention of the control-plane logs, including the Kubernetes audit log"
   type        = number
   default     = 365
+
+  validation {
+    condition     = var.cluster_log_retention_days >= 365
+    error_message = "HC-3: the control-plane log group holds the Kubernetes audit log and must keep it at least 365 days."
+  }
 }
 
 variable "logs_kms_key_arn" {
@@ -76,4 +81,28 @@ variable "viewer_principal_arns" {
   description = "IAM principals with read-only access to the cluster"
   type        = list(string)
   default     = []
+}
+
+variable "audit_export" {
+  description = <<-EOT
+    Copy the Kubernetes API audit log to the Object Lock audit bucket (bootstrap, modules/audit) under
+    eks-audit/<cluster>/, where nobody can delete it for a year (HC-3). null = keep it in CloudWatch only.
+    bucket_arn and kms_key_arn are the audit bucket and its key; the key policy must allow Firehose
+    for streams named <name>-eks-audit.
+  EOT
+  type = object({
+    bucket_arn  = string
+    kms_key_arn = string
+  })
+  default = null
+}
+
+variable "protect_log_group" {
+  description = <<-EOT
+    Keep the control-plane log group when the environment is destroyed (skip_destroy). For prod, which
+    is only torn down deliberately. Must match the environments DenyEksLogTampering covers in
+    modules/iam-ci (prod only), or a destroy fails with AccessDenied on the log group.
+  EOT
+  type        = bool
+  default     = false
 }

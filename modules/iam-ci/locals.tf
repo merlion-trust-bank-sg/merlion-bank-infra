@@ -36,6 +36,14 @@ locals {
     "arn:aws:cloudwatch:${local.r}:${local.a}:alarm:${local.p}-${e}-*",
   ] }
 
+  # Prod's EKS control-plane log group (and its streams), which no pipeline may delete. Staging's isn't
+  # included: it's torn down every night with the rest of staging (its audit log is in the Object Lock
+  # bucket), and envs/staging doesn't set protect_log_group.
+  eks_log_group_arns = [
+    "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-prod/*",
+    "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-prod/*:*",
+  ]
+
   # Created by other bootstrap PRs; protected by name so the rules hold as soon as they exist
   audit_bucket = "${local.p}-audit-${local.a}"
   ecr_repo_arn = "arn:aws:ecr:${local.r}:${local.a}:repository/merlion/*"

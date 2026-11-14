@@ -3,7 +3,48 @@
 
 # Bootstrap layer: state buckets and keys, CI roles, boundaries, ECR repos, the audit trail.
 # Nothing the pipeline runs can weaken the audit trail or its own permissions.
+#
+# Split in two because the workload boundaries (boundary.tf) include it, and a managed policy can't
+# exceed 6,144 characters:
+#   protect_bootstrap_common   in the deploy roles' policy and in every boundary
+#   protect_bootstrap_extra    in the deploy roles' policy only; each boundary already denies the same
+#                              (DenyAllIam covers iam:*, DenyStateBuckets covers every state bucket)
 data "aws_iam_policy_document" "protect_bootstrap" {
+  source_policy_documents = [
+    data.aws_iam_policy_document.protect_bootstrap_common.json,
+    data.aws_iam_policy_document.protect_bootstrap_extra.json,
+  ]
+}
+
+data "aws_iam_policy_document" "protect_bootstrap_extra" {
+  statement {
+    sid       = "DenyBootstrapState"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = ["arn:aws:s3:::${var.state_buckets["bootstrap"]}", "arn:aws:s3:::${var.state_buckets["bootstrap"]}/*"]
+  }
+
+  statement {
+    sid     = "DenyChangesToCiRolesAndBoundaries"
+    effect  = "Deny"
+    actions = ["iam:*"]
+    resources = [
+      "arn:aws:iam::${local.a}:role/${local.p}-ci-*",
+      "arn:aws:iam::${local.a}:policy/${local.p}-ci-*",
+      "arn:aws:iam::${local.a}:policy/${local.p}-*-workload-boundary",
+      "arn:aws:iam::${local.a}:oidc-provider/token.actions.githubusercontent.com",
+    ]
+  }
+
+  statement {
+    sid       = "DenyRemovingBoundaries"
+    effect    = "Deny"
+    actions   = ["iam:DeleteRolePermissionsBoundary"]
+    resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "protect_bootstrap_common" {
   statement {
     sid    = "DenyBucketConfigChanges"
     effect = "Deny"
@@ -24,13 +65,6 @@ data "aws_iam_policy_document" "protect_bootstrap" {
       [for b in values(var.state_buckets) : "arn:aws:s3:::${b}"],
       ["arn:aws:s3:::${local.audit_bucket}"],
     )
-  }
-
-  statement {
-    sid       = "DenyBootstrapState"
-    effect    = "Deny"
-    actions   = ["s3:*"]
-    resources = ["arn:aws:s3:::${var.state_buckets["bootstrap"]}", "arn:aws:s3:::${var.state_buckets["bootstrap"]}/*"]
   }
 
   statement {
@@ -61,13 +95,33 @@ data "aws_iam_policy_document" "protect_bootstrap" {
     )
   }
 
-  # The audit key: encrypt new deploy records (kms:GenerateDataKey), nothing else. No decrypt (so the
-  # audit logs can't be read back), and no changes to the key; the key policy also denies those.
+  # The audit key: encrypt new deploy records and EKS audit log deliveries (kms:GenerateDataKey),
+  # nothing else. No decrypt (so the audit logs can't be read back), and no changes to the key; the
+  # key policy also denies those. Also binds the Firehose role, which carries the env's boundary.
   statement {
     sid         = "AuditKeyEncryptOnly"
     effect      = "Deny"
     not_actions = ["kms:GenerateDataKey", "kms:DescribeKey"]
     resources   = [var.audit_kms_key_arn]
+  }
+
+  # Prod's EKS control-plane logs (incl. the Kubernetes audit log, HC-3). The pipeline creates the log
+  # group but can't delete it, its streams or the export to the audit bucket; tearing prod down leaves
+  # the group behind (protect_log_group in envs/prod). Staging's isn't covered: it's destroyed every
+  # night, and the one-year copy is in the Object Lock bucket either way. PutRetentionPolicy stays
+  # allowed: Terraform sets retention right after creating the group; modules/eks validates it's at
+  # least a year.
+  statement {
+    sid    = "DenyEksLogTampering"
+    effect = "Deny"
+    actions = [
+      "logs:DeleteLogGroup",
+      "logs:DeleteLogStream",
+      "logs:DeleteRetentionPolicy",
+      "logs:DeleteSubscriptionFilter",
+      "logs:DisassociateKmsKey",
+    ]
+    resources = local.eks_log_group_arns
   }
 
   # Write deploy records, never read the audit trail back or remove anything from it
@@ -96,25 +150,6 @@ data "aws_iam_policy_document" "protect_bootstrap" {
       "cloudtrail:PutEventSelectors",
       "cloudtrail:PutInsightSelectors",
     ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid     = "DenyChangesToCiRolesAndBoundaries"
-    effect  = "Deny"
-    actions = ["iam:*"]
-    resources = [
-      "arn:aws:iam::${local.a}:role/${local.p}-ci-*",
-      "arn:aws:iam::${local.a}:policy/${local.p}-ci-*",
-      "arn:aws:iam::${local.a}:policy/${local.p}-*-workload-boundary",
-      "arn:aws:iam::${local.a}:oidc-provider/token.actions.githubusercontent.com",
-    ]
-  }
-
-  statement {
-    sid       = "DenyRemovingBoundaries"
-    effect    = "Deny"
-    actions   = ["iam:DeleteRolePermissionsBoundary"]
     resources = ["*"]
   }
 

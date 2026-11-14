@@ -56,11 +56,11 @@ resource "aws_cloudtrail" "this" {
     }
   }
 
-  # Deploy record writes (deploys/<env>/), so CloudTrail shows which role and ci-<run id> session
-  # wrote each one. Only this prefix: CloudTrail delivers under AWSLogs/, and logging its own writes
-  # would add an event for every delivery, endlessly.
+  # Deploy record writes (deploys/<env>/) and EKS audit log deliveries (eks-audit/), so CloudTrail
+  # shows which role wrote each object. Only these prefixes: CloudTrail delivers under AWSLogs/, and
+  # logging its own writes would add an event for every delivery, endlessly.
   advanced_event_selector {
-    name = "Audit bucket: deploy record writes"
+    name = "Audit bucket: deploy record and EKS audit log writes"
 
     field_selector {
       field  = "eventCategory"
@@ -74,7 +74,7 @@ resource "aws_cloudtrail" "this" {
 
     field_selector {
       field       = "resources.ARN"
-      starts_with = ["${aws_s3_bucket.audit.arn}/deploys/"]
+      starts_with = ["${aws_s3_bucket.audit.arn}/deploys/", "${aws_s3_bucket.audit.arn}/eks-audit/"]
     }
 
     field_selector {
