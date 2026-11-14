@@ -3,7 +3,9 @@
 #   1. it changes nothing but image digests in deploy/values-<env>.yaml (check-promotion.py);
 #   2. for prod, every digest is one staging already runs on main;
 #   3. every digest it sets has build provenance signed by merlion-bank-app's cd on main
-#      (verify-provenance.py, Sigstore; read from GitHub's attestation store, no AWS access).
+#      (verify-provenance.py, Sigstore; read from GitHub's attestation store, no AWS access);
+#   4. for prod, someone other than whoever ran promote-prod has approved it (check-prod-approval.py;
+#      re-run on every review by promotion-review.yml).
 # Like every PR it also needs a teammate's approval: these checks guarantee *what* is promoted, the
 # reviewer decides *whether*. Any other PR passes straight away.
 #
@@ -93,6 +95,11 @@ jobs:
   prod:
     name: prod promotion only
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+      actions: read # who ran the promote-prod run
+      pull-requests: read # the PR's reviews
     steps:
       # By branch and by author, so neither a human on the promotion branch nor the App on another
       # branch skips it
@@ -157,3 +164,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: xargs python3 .github/scripts/verify-provenance.py < "$RUNNER_TEMP/digests.txt"
+
+      # Someone other than whoever ran promote-prod must approve the current head. GitHub's rules
+      # can't do this: the App pushes the commit, so "the last pusher can't approve" compares with the
+      # App. Re-run on every review by promotion-review.yml.
+      - name: Approved by someone other than who promoted
+        if: steps.kind.outputs.promotion == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: python3 .github/scripts/check-prod-approval.py pr
