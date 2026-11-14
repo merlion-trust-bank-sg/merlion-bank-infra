@@ -12,6 +12,11 @@ environment: {{ .Values.env | quote }}
 {{ .root.Values.image.registry }}/{{ $img.name }}@{{ $img.digest }}
 {{- end -}}
 
+{{/* The fewest replicas a service runs: the HPA's minimum when it has one, otherwise replicas */}}
+{{- define "boa.minReplicas" -}}
+{{- if and .hpa .hpa.enabled }}{{ .hpa.minReplicas }}{{ else }}{{ .replicas }}{{ end -}}
+{{- end -}}
+
 {{/* Pod and container hardening shared by every workload */}}
 {{- define "boa.podSecurity" -}}
 securityContext:

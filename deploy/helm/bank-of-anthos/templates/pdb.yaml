@@ -1,6 +1,6 @@
 # Keep at least one frontend up during node drains and upgrades
 {{- with .Values.services.frontend }}
-{{- if gt (int .replicas) 1 }}
+{{- if gt (int (include "boa.minReplicas" .)) 1 }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
