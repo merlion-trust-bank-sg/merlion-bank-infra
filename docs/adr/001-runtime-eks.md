@@ -1,7 +1,7 @@
 # ADR-001: Container runtime – Amazon EKS
 
 - **Status:** Accepted
-- **Date:** 2026-10-31
+- **Date:** 2026-10-31 (revised 2026-11-10: Pod Identity instead of IRSA, Argo CD deploys, as built)
 - **Deciders:** Solutions Architect, reviewed by DevSecOps (DO1)
 - **Related:** FR-2, NFR-1, NFR-3, HC-1, HC-2 (`docs/requirements.md`); ADR-003 (observability)
 
@@ -20,21 +20,24 @@ Constraints that shape the choice:
 
 ## Decision
 Use **Amazon EKS** (managed Kubernetes control plane) with a **managed node group** in private
-subnets across 2 AZs, deploying the application with **our own Helm chart**.
+subnets across 2 AZs, deploying the application with **our own Helm chart**, synced into the cluster
+by **Argo CD** from `merlion-bank-infra` (GitOps, ADR-007). Pods that call AWS use **EKS Pod Identity**.
 
 ## Alternatives considered
 | Option | Pros | Cons | Verdict |
 |---|---|---|---|
 | **Amazon ECS on Fargate** | No nodes to manage; cheaper at small scale; simpler IAM per task | Bank of Anthos ships Kubernetes manifests only, so we would rewrite 6 services as task definitions; self-hosted Prometheus/Loki/Grafana is awkward on Fargate (no DaemonSets, no node-level log collection); team has less ECS experience | Rejected |
 | **Amazon ECS on EC2** | Lower cost than EKS control plane | Same rewrite effort; we manage instances; weaker ecosystem for our observability stack | Rejected |
-| **Amazon EKS** | Runs Bank of Anthos close to upstream design; DaemonSets for Promtail/node-exporter; Helm for repeatable deploys; HPA, PDBs, probes; IRSA for per-pod AWS permissions; matches team skills | Control plane fee (~USD 73/month per cluster); more moving parts; Kubernetes upgrades to manage | **Chosen** |
+| **Amazon EKS** | Runs Bank of Anthos close to upstream design; DaemonSets for Alloy/node-exporter; Helm for repeatable deploys; HPA, PDBs, probes; Pod Identity for per-pod AWS permissions; matches team skills | Control plane fee (~USD 73/month per cluster); more moving parts; Kubernetes upgrades to manage | **Chosen** |
 
 ## Consequences
 **Positive**
 - Self-hosted observability (ADR-003) runs naturally on the same cluster, keeping logs in-region (HC-1).
-- Helm values per environment give one reviewed, versioned deployment definition (HC-2).
+- Helm values per environment, applied by Argo CD from `main`, give one reviewed, versioned deployment
+  definition (HC-2).
 - PDBs, multi-replica `frontend`, and nodes across 2 AZs support NFR-1/NFR-3.
-- IRSA gives each workload least-privilege AWS access (e.g. External Secrets, Loki → S3).
+- Pod Identity gives each workload least-privilege AWS access (e.g. External Secrets, Loki → S3), and its
+  roles survive cluster rebuilds because the trust policy doesn't name the cluster.
 
 **Negative / risks**
 - Higher fixed cost: the EKS control plane plus nodes. Mitigation: small node group, scale staging to 0
@@ -43,6 +46,8 @@ subnets across 2 AZs, deploying the application with **our own Helm chart**.
   versions, everything in Terraform.
 - Cluster access must be controlled: EKS access entries map only pipeline roles and named admins.
 
-## Evidence (to be completed when built)
-- `modules/eks/` (INF-06): cluster, node group, IRSA
-- `kubectl get nodes` showing nodes in `us-east-1a` and `us-east-1b`
+## Evidence
+- `modules/eks/` (INF-06, PR #17): cluster, managed node group (3 × `t3.medium`, the largest x86 type
+  the training account allows), add-ons, access entries, Pod Identity
+- `modules/addons/` and `deploy/` (INF-14, PR #19): Pod Identity roles, Argo CD and its add-ons
+- To add from a pipeline-built cluster: `kubectl get nodes` showing nodes in `us-east-1a` and `us-east-1b`

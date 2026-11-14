@@ -10,7 +10,7 @@ The Merlion Trust Bank use case (HC-1) requires all customer data, backups and a
 to remain at rest in `ap-southeast-1` (Singapore). Our instructor has directed the class to deploy
 in **`us-east-1`**, where the shared training account and its tooling are set up.
 
-Instructor approval: _add the date and where it was given (for example class session or message)_.
+Instructor approval: given by the instructor to the whole class during the course (date not recorded).
 
 The intent of HC-1 is **data residency**: customer data must not spread across regions or to
 third-party SaaS in other jurisdictions. That intent can be met in any single approved region.
