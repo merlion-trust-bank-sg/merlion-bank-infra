@@ -50,11 +50,14 @@ account.
 
 **Who can touch it**
 - The trail, bucket and audit key are created by the **bootstrap layer**, not by the pipeline.
-- Every CI role, and every role the pipeline creates through its permissions boundary, carries
+- Every CI role that can change resources, and every role the pipeline creates through its permissions boundary, carries
   `protect_bootstrap` (`modules/iam-ci/guardrails.tf`), which explicitly denies changes to the audit
   bucket's configuration, reads and deletes of audit objects, retention changes and governance
   bypass, and `StopLogging`, `DeleteTrail`, `UpdateTrail` and event selector changes on trails.
-- The pipeline can only `PutObject` deploy records under `deploys/<env>/`.
+- The pipeline can only `PutObject` deploy records under `deploys/<env>/`. They're written by
+  `.github/workflows/deploy-record.yml` with `g4-merlion-ci-record`, a role that can do nothing
+  else: one record per application deploy (a merged change to `deploy/values-<env>.yaml`) and per
+  production `terraform apply` (APP-11).
 
 **What is stored**
 - CloudTrail logs.

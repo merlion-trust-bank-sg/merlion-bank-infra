@@ -9,6 +9,7 @@ locals {
       build     = "${local.p}-ci-build"
       plan      = "${local.p}-ci-plan"
       prod_plan = "${local.p}-ci-prod-plan"
+      record    = "${local.p}-ci-record"
     },
   )
 

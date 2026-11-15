@@ -42,6 +42,7 @@ Each role can be assumed by one exact kind of job (the OIDC `sub` claim):
 | `g4-merlion-ci-prod-plan` | `merlion-bank-infra`, `main`, job without an environment | Read-only `terraform plan` for prod (prod state only) |
 | `g4-merlion-ci-staging` | `merlion-bank-infra`, GitHub environment `staging` | Change staging resources only |
 | `g4-merlion-ci-prod` | `merlion-bank-infra`, GitHub environment `production`, after a reviewer approves | Change prod resources only |
+| `g4-merlion-ci-record` | `merlion-bank-infra`, `main`, job without an environment (`deploy-record.yml`) | Add deploy records under `deploys/<env>/` in the audit bucket. Nothing else: no read, no delete. |
 
 App deploys go through Argo CD, which pulls from this repo, so the app repo never gets
 staging or prod credentials.

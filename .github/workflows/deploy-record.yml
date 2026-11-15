@@ -1,0 +1,96 @@
+# Deploy records (APP-11, ADR-004, HC-2): every deploy to staging or prod is written to the Object
+# Lock audit bucket under deploys/<env>/, where nobody can change or delete it for a year. GitHub's own
+# run logs expire; these records don't.
+#
+#   push to main changing deploy/values-<env>.yaml   an application deploy (a merged promotion PR or
+#                                                    rollback; Argo CD syncs it): PR, author, merger,
+#                                                    approvers, every image digest, app commit
+#   tf-apply finished with "apply prod" succeeded    a production terraform apply: PR, who approved
+#                                                    the production environment, the saved plan
+#
+# Role g4-merlion-ci-record can only add objects under deploys/ (modules/iam-ci/record.tf): it can't
+# read, overwrite or delete anything. A failed run here doesn't undo the deploy; it shows the deploy
+# wasn't recorded, so re-run it.
+name: deploy-record
+
+on:
+  push:
+    branches: [main]
+    paths: ["deploy/values-*.yaml"]
+  workflow_run:
+    workflows: [tf-apply]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC token for the record role
+  pull-requests: read # the merged PR, its reviews
+  actions: read # tf-apply's jobs and production approvals
+
+env:
+  AUDIT_BUCKET: g4-merlion-audit-255945442255
+
+jobs:
+  record:
+    name: write deploy record
+    runs-on: ubuntu-latest
+    # workflow_run fires for every tf-apply run; only one that applied prod needs a record (the script
+    # checks the job too)
+    if: github.event_name == 'push' || github.event.workflow_run.conclusion != 'cancelled'
+    steps:
+      # The pushed commit and the one before it, to see which values files changed
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build the records
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
+          TF_APPLY_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          out="$RUNNER_TEMP/records"
+          if [ "$EVENT" = push ]; then
+            python3 .github/scripts/deploy-record.py app "$SHA" "$BEFORE" "$out"
+          else
+            python3 .github/scripts/deploy-record.py apply "$TF_APPLY_RUN" "$out"
+          fi
+          if [ -d "$out" ] && [ -n "$(ls -A "$out")" ]; then
+            echo "dir=$out" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: AWS login (record role, OIDC)
+        if: steps.build.outputs.dir
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::255945442255:role/g4-merlion-ci-record
+          role-session-name: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: us-east-1
+
+      # Object Lock buckets need a checksum on every PutObject. The bucket's default encryption (the
+      # audit key) applies. Each record goes in the run summary too.
+      - name: Upload to the audit bucket
+        if: steps.build.outputs.dir
+        env:
+          DIR: ${{ steps.build.outputs.dir }}
+        run: |
+          cd "$DIR"
+          echo "## Deploy records" >> "$GITHUB_STEP_SUMMARY"
+          for f in */*.json; do
+            key="deploys/$f"
+            aws s3api put-object --bucket "$AUDIT_BUCKET" --key "$key" --body "$f" \
+              --content-type application/json --checksum-algorithm SHA256 >/dev/null
+            echo "Recorded s3://$AUDIT_BUCKET/$key"
+            {
+              echo "### \`s3://$AUDIT_BUCKET/$key\`"
+              echo '```json'
+              cat "$f"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
