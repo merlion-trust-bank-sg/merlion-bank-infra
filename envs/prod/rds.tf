@@ -24,8 +24,9 @@ module "rds" {
   multi_az              = true
   backup_retention_days = 7
 
-  # A delete must be deliberate. To tear prod down, set this to false in the same PR as enabled =
-  # false: Terraform lifts the protection, then deletes. Each database keeps a dated final snapshot.
+  # A delete must be deliberate. To tear prod down, first set this to false in its own PR and apply it;
+  # only then set enabled = false. In one PR the destroy fails: the databases are removed from the
+  # config, so it sees deletion_protection = true from state. Each database keeps a final snapshot.
   deletion_protection = true
   skip_final_snapshot = false
 

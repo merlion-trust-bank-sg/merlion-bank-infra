@@ -40,19 +40,20 @@ module "eks" {
   # Only the prod pipeline may change the cluster. People get read-only access: prod changes go
   # through a reviewed PR and the approved pipeline, never kubectl (HC-2).
   #
-  # TEMPORARY, for testing prod before the presentations: the three of us are cluster admins too.
-  # Remove before the demo, so the demo shows the intended access: pipeline admin, people read-only.
-  # Every kubectl change is in the EKS audit log (exported to the Object Lock bucket).
+  # TEMPORARY, for testing prod before the demo: one person (DevSecOps) is cluster admin too, for
+  # rollout restarts and the app steps of a restore. Remove before the demo, so it shows the intended
+  # access: pipeline admin, people read-only. Every kubectl change is in the EKS audit log (exported
+  # to the Object Lock bucket), and Argo CD self-heal reverts manual changes to what's in Git.
   admin_principal_arns = [
     "arn:aws:iam::${var.account_id}:role/${var.team}-merlion-ci-prod",
-    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh",    # TEMPORARY
-    "arn:aws:iam::${var.account_id}:user/students/ce13/paulyapsl", # TEMPORARY
-    "arn:aws:iam::${var.account_id}:user/students/ce13/kealeee",   # TEMPORARY
+    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh", # TEMPORARY
   ]
   # Admin wins when a principal is in both lists (modules/eks/access.tf), so this stays as the
-  # permanent setting once the temporary admins are removed
+  # permanent setting once the temporary admin is removed
   viewer_principal_arns = [
-    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh", # SRE / DevSecOps
+    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh",    # DevSecOps
+    "arn:aws:iam::${var.account_id}:user/students/ce13/paulyapsl", # SRE: demo, incident runbook (APP-15)
+    "arn:aws:iam::${var.account_id}:user/students/ce13/kealeee",   # SA: evidence (DOC-04)
   ]
 }
 
