@@ -16,8 +16,8 @@ resource "aws_cloudwatch_log_group" "cluster" {
 
   # Prod: a teardown leaves the group (and its year of control-plane logs) in place, and the pipeline
   # can't delete it (DenyEksLogTampering in modules/iam-ci). A rebuild must import the leftover group
-  # first. Staging is torn down every night, so its group is deleted with it; the copy that has to
-  # last a year is the one in the Object Lock bucket (audit_export).
+  # first (import_eks_log_group in envs/prod). Staging's group is deleted with staging by the teardown
+  # workflow; the copy that has to last a year is the one in the Object Lock bucket (audit_export).
   skip_destroy = var.protect_log_group
 }
 

@@ -39,7 +39,7 @@ locals {
   ] }
 
   # Prod's EKS control-plane log group (and its streams), which no pipeline may delete. Staging's isn't
-  # included: it's torn down every night with the rest of staging (its audit log is in the Object Lock
+  # included: it's destroyed with staging by the teardown workflow (its audit log is in the Object Lock
   # bucket), and envs/staging doesn't set protect_log_group.
   eks_log_group_arns = [
     "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-prod/*",

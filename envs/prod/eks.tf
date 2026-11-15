@@ -24,8 +24,7 @@ module "eks" {
   logs_kms_key_arn = module.logs_key[0].arn
 
   # Prod's control-plane logs outlive a teardown, and the pipeline can't delete them. Tearing prod down
-  # leaves /aws/eks/g4-merlion-prod/cluster behind; bringing it back needs that group imported first
-  # (terraform import 'module.eks[0].aws_cloudwatch_log_group.cluster' /aws/eks/g4-merlion-prod/cluster).
+  # leaves /aws/eks/g4-merlion-prod/cluster behind; bringing it back imports it (import below).
   protect_log_group = true
 
   # Kubernetes audit log copied to the Object Lock audit bucket, where nobody can delete it (HC-3).
@@ -53,4 +52,12 @@ data "aws_kms_alias" "audit" {
   count = local.enabled ? 1 : 0
 
   name = "alias/${var.team}-merlion-audit"
+}
+
+# A prod teardown leaves the log group behind (protect_log_group), so a rebuild adopts it instead of
+# failing with ResourceAlreadyExistsException. Driven by a variable so the rebuild is a reviewed change.
+import {
+  for_each = var.import_eks_log_group ? toset(["cluster"]) : toset([])
+  to       = module.eks[0].aws_cloudwatch_log_group.cluster
+  id       = "/aws/eks/${local.name}/cluster"
 }

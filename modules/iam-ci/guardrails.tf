@@ -106,11 +106,15 @@ data "aws_iam_policy_document" "protect_bootstrap_common" {
   }
 
   # Prod's EKS control-plane logs (incl. the Kubernetes audit log, HC-3). The pipeline creates the log
-  # group but can't delete it, its streams or the export to the audit bucket; tearing prod down leaves
-  # the group behind (protect_log_group in envs/prod). Staging's isn't covered: it's destroyed every
-  # night, and the one-year copy is in the Object Lock bucket either way. PutRetentionPolicy stays
-  # allowed: Terraform sets retention right after creating the group; modules/eks validates it's at
-  # least a year.
+  # group but can't delete it or its streams; tearing prod down leaves the group behind
+  # (protect_log_group in envs/prod). Staging's isn't covered: it's destroyed with staging by the
+  # teardown workflow, and the one-year copy is in the Object Lock bucket either way.
+  # Not denied:
+  # - PutRetentionPolicy: Terraform sets retention right after creating the group; modules/eks
+  #   validates it's at least a year.
+  # - DeleteSubscriptionFilter: destroying prod (enabled = false) deletes the export filter. Deleting it
+  #   only stops future copies, which PutSubscriptionFilter could do anyway; the Firehose
+  #   IncomingRecords alert (INF-17) catches an export that stops.
   statement {
     sid    = "DenyEksLogTampering"
     effect = "Deny"
@@ -118,7 +122,6 @@ data "aws_iam_policy_document" "protect_bootstrap_common" {
       "logs:DeleteLogGroup",
       "logs:DeleteLogStream",
       "logs:DeleteRetentionPolicy",
-      "logs:DeleteSubscriptionFilter",
       "logs:DisassociateKmsKey",
     ]
     resources = local.eks_log_group_arns
