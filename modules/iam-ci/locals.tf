@@ -28,6 +28,8 @@ locals {
     "arn:aws:iam::${local.a}:role/${local.p}-${e}-*",
     "arn:aws:iam::${local.a}:policy/${local.p}-${e}-*",
     "arn:aws:secretsmanager:${local.r}:${local.a}:secret:${local.p}/${e}/*",
+    # The app's own secrets are named after the env like everything else (g4-merlion-<env>/app/jwt)
+    "arn:aws:secretsmanager:${local.r}:${local.a}:secret:${local.p}-${e}/*",
     "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-${e}/*",
     "arn:aws:logs:${local.r}:${local.a}:log-group:/${local.p}/${e}/*",
     "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/vpc/${local.p}-${e}*",
