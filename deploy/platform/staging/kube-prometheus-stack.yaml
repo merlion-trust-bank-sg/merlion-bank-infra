@@ -1,5 +1,6 @@
 # Prometheus, Grafana, Alertmanager, node-exporter and kube-state-metrics (ADR-003, INF-15).
-# Alert routing to email / Telegram comes in INF-16; dashboards and SLO rules in INF-17.
+# Alert routing to Telegram / email is in the alertmanager block (INF-16); the SLO rules and the dashboard
+# are in deploy/helm/observability (INF-17).
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -57,16 +58,89 @@ spec:
                         requests:
                           storage: 20Gi
             alertmanager:
+              # Routing (INF-16). No message templates here: this file is an Argo CD Go template, and
+              # Alertmanager's default Telegram and email texts carry only alert names, labels and the
+              # annotations we wrote in the rules, so no customer data.
+              config:
+                global:
+                  resolve_timeout: 5m
+                  # Email is optional. To use it: fill in the three smtp_* values, and uncomment
+                  # email_configs below. The password is a file from Secrets Manager, never a value here.
+                  # smtp_smarthost: smtp.gmail.com:587
+                  # smtp_from: <team mailbox>
+                  # smtp_auth_username: <team mailbox>
+                  # smtp_auth_password_file: /etc/alertmanager/secrets/alertmanager-notify/smtp-password
+                route:
+                  receiver: team
+                  group_by: [alertname, namespace]
+                  group_wait: 30s
+                  group_interval: 5m
+                  repeat_interval: 4h
+                  routes:
+                    # Dead man's switch: Watchdog always fires, so one message every 12 hours proves
+                    # Prometheus -> Alertmanager -> Telegram works. No message = monitoring is down.
+                    - receiver: heartbeat
+                      matchers: ['alertname = "Watchdog"']
+                      group_wait: 0s
+                      repeat_interval: 12h
+                    - receiver: "null"
+                      matchers: ['alertname = "InfoInhibitor"']
+                receivers:
+                  - name: "null"
+                  - name: team
+                    telegram_configs:
+                      - bot_token_file: /etc/alertmanager/secrets/alertmanager-notify/telegram-bot-token
+                        chat_id: -7684609646 # REPLACE: the team alert group's chat ID (not a secret)
+                        send_resolved: true
+                    # email_configs:
+                    #   - to: <team mailbox>
+                    #     send_resolved: true
+                  - name: heartbeat
+                    telegram_configs:
+                      - bot_token_file: /etc/alertmanager/secrets/alertmanager-notify/telegram-bot-token
+                        chat_id: -7684609646 # REPLACE: same chat
+                        send_resolved: false
               alertmanagerSpec:
+                # Kubernetes Secret from External Secrets (deploy/helm/observability), mounted at
+                # /etc/alertmanager/secrets/alertmanager-notify/
+                secrets:
+                  - alertmanager-notify
                 resources:
                   requests:
                     cpu: 20m
                     memory: 64Mi
             grafana:
               # Dashboards come from code (INF-17), so nothing needs to persist in Grafana itself.
-              # Reached with kubectl port-forward until it gets an ALB with TLS and login.
               persistence:
                 enabled: false
+              # Admin login from Secrets Manager (External Secrets, deploy/helm/observability)
+              admin:
+                existingSecret: grafana-admin
+                userKey: admin-user
+                passwordKey: admin-password
+              # https://grafana.<app hostname>: its own ALB with the env's certificate (which lists this
+              # name, envs/<env>/dns.tf). Login required; anonymous access stays off because logs can
+              # hold customer data.
+              ingress:
+                enabled: true
+                ingressClassName: alb
+                hosts:
+                  - 'grafana.{{index .metadata.annotations "app_hostname"}}'
+                path: /
+                annotations:
+                  alb.ingress.kubernetes.io/scheme: internet-facing
+                  alb.ingress.kubernetes.io/target-type: ip
+                  alb.ingress.kubernetes.io/healthcheck-path: /api/health
+                  alb.ingress.kubernetes.io/certificate-arn: '{{index .metadata.annotations "certificate_arn"}}'
+                  alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+                  alb.ingress.kubernetes.io/ssl-redirect: "443"
+                  alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+              grafana.ini:
+                server:
+                  root_url: 'https://grafana.{{index .metadata.annotations "app_hostname"}}'
+                # The health dashboard is what people see after logging in
+                dashboards:
+                  default_home_dashboard_path: /tmp/dashboards/bank-health.json
               # Helm test pods aren't used with Argo CD
               testFramework:
                 enabled: false
