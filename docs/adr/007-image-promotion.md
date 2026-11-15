@@ -47,6 +47,14 @@ know an image being promoted is one our pipeline built.
     `deploy/values-prod.yaml`, each equal to the digest staging runs on `main` and signed by cd.
 
   So a reviewer only decides *whether* to deploy this version; the checks guarantee *what* it is.
+- **Rollback is a revert of the promotion PR**, approved like any PR (runbook:
+  `docs/runbooks/rollback.md`). A person's PR that changes `deploy/values-<env>.yaml` is also
+  checked by that environment's promotion check (`check-promotion.py --manual`): every digest it adds
+  must be one the environment ran before (in the file's history on `main`), or pass the promotion
+  rules (signed by cd; for prod, also what staging runs). A revert passes; a hand-edited "rollback" to
+  any other image fails, so the reviewer isn't the only safeguard. Digests that ran there before
+  aren't re-verified: they were checked when they first got there, and this keeps rollback possible
+  to images built before signing.
 - **Deploy records** (APP-11): each merged promotion and each apply is written to the Object Lock
   audit bucket.
 
@@ -70,7 +78,8 @@ know an image being promoted is one our pipeline built.
   Argo CD sync history and the deploy record back it up.
 - One ruleset, no bypass list: the same rule for people, pipelines and the App.
 - The app repo never has cluster or Terraform credentials; the App can only open PRs.
-- Rollback is a Git revert; the previous image is still in ECR.
+- Rollback is a Git revert; the previous image is still in ECR, and the check limits a rollback to
+  images the environment already ran.
 
 **Negative / risks**
 - **Staging isn't continuous deployment:** a release reaches staging when a teammate approves the
@@ -84,7 +93,10 @@ know an image being promoted is one our pipeline built.
 - Images built before signing was added have no provenance; promotions only verify the digests they
   set, so they don't block, but those images can't be promoted to prod.
 - A promotion waits on `plan staging`, so it can't be approved while the CI roles are broken (for
-  example after the nightly cleanup).
+  example after the nightly cleanup). The same applies to a rollback PR.
+- **A rollback needs a teammate's approval**, so it's slower than Argo CD's rollback button (which
+  self-heal would undo anyway). It doesn't roll back data: a release that changes the database schema
+  needs a backward-compatible migration.
 
 ## Evidence
 - `merlion-bank-app` `cd.yml` (`promote to staging` job, attestations) and a merged
@@ -93,3 +105,5 @@ know an image being promoted is one our pipeline built.
 - `.github/workflows/promotion.yml`, `.github/scripts/check-promotion.py`; a promotion PR failing the
   check (unsigned digest, or a change outside the digests); the ruleset screenshot (no bypass list).
 - `deploy/values-staging.yaml` and `deploy/values-prod.yaml` history.
+- A revert PR of a promotion passing its promotion check, and a hand-edited `values-prod.yaml`
+  with an unknown digest failing it.
