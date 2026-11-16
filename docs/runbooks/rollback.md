@@ -27,7 +27,7 @@ reviewed and merged like any change. Nobody changes the cluster by hand (HC-2).
    back earlier digests, so it passes. A "rollback" to any other image fails.
 4. **Approval and merge.** A teammate (not the author) approves and merges. No `production`
    environment approval is needed: the change is in `deploy/`, not Terraform.
-5. **Argo CD redeploys** the previous images within about 3 minutes. They're still in ECR (tags are
+5. **Argo CD redeploys** the previous images within about a minute. They're still in ECR (tags are
    immutable and images are referenced by digest), so nothing is rebuilt.
 6. **Verify** (read-only access is enough in prod):
    ```bash
