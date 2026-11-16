@@ -16,7 +16,7 @@ module "addons" {
   readable_secret_arns = concat(
     [for db in module.rds[0].databases : db.master_secret_arn],
     [aws_secretsmanager_secret.jwt[0].arn],
-      # Written once by deploy/bootstrap/put-argocd-github-app.sh, outside Terraform, so it survives a
+    # Written once by deploy/bootstrap/put-argocd-github-app.sh, outside Terraform, so it survives a
     # teardown (AWS-managed key). Secrets Manager adds a 6-character suffix to the ARN.
     ["arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:${local.name}/argocd/github-app-??????"],
     # Alertmanager's Telegram token and Grafana's admin password (INF-16). Written once by
