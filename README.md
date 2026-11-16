@@ -82,10 +82,14 @@ confirmation email AWS sends: `export TF_VAR_alert_email=<address>`.
 
 ## Argo CD's GitHub credentials (once, by an org owner)
 
+**Before the first merge that includes this, and before a new environment's first bootstrap:** the
+environment's key must be stored (step 4). `bootstrap.sh` stops without it, so every `tf-apply` run
+would fail at the bootstrap step.
+
 Argo CD reads this repo as it would read a private one: with a GitHub App that can only read
-`merlion-bank-infra`. The repo stays public because GitHub Free enforces rulesets and environment
-required reviewers (the `production` approval) only on public repos; the credentials are real either
-way (GitHub rejects a revoked key on a public repo too).
+`merlion-bank-infra` (why: ADR-007). The repo stays public because GitHub Free enforces rulesets and
+environment required reviewers (the `production` approval) only on public repos; the credentials are
+real either way (GitHub rejects a revoked key on a public repo too).
 
 1. **Create the App:** org settings → Developer settings → GitHub Apps → New GitHub App.
    - Name `merlion-argocd`; Homepage URL: this repo; **Webhook: Active unticked**.
