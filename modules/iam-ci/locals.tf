@@ -17,7 +17,13 @@ locals {
     e => "arn:aws:iam::${local.a}:policy/${local.p}-${e}-workload-boundary"
   }
 
+  # The env's own secrets (g4-merlion-<env>/app/jwt). Managed through a short action list in deploy.tf.
+  env_secret_arns = { for e in keys(var.environments) :
+    e => "arn:aws:secretsmanager:${local.r}:${local.a}:secret:${local.p}-${e}/*"
+  }
+
   # Resources owned by one environment, identified by name. Allowed for that env, denied to the other.
+  # Everything the env stacks create is named g4-merlion-<env>..., after any fixed AWS path (/aws/eks/).
   env_named_arns = { for e in keys(var.environments) : e => [
     "arn:aws:s3:::${local.p}-${e}-*",
     "arn:aws:s3:::${local.p}-${e}-*/*",
@@ -27,11 +33,8 @@ locals {
     "arn:aws:rds:${local.r}:${local.a}:*:${local.p}-${e}*",
     "arn:aws:iam::${local.a}:role/${local.p}-${e}-*",
     "arn:aws:iam::${local.a}:policy/${local.p}-${e}-*",
-    "arn:aws:secretsmanager:${local.r}:${local.a}:secret:${local.p}/${e}/*",
-    # The app's own secrets are named after the env like everything else (g4-merlion-<env>/app/jwt)
-    "arn:aws:secretsmanager:${local.r}:${local.a}:secret:${local.p}-${e}/*",
+    local.env_secret_arns[e],
     "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-${e}/*",
-    "arn:aws:logs:${local.r}:${local.a}:log-group:/${local.p}/${e}/*",
     "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/vpc/${local.p}-${e}*",
     "arn:aws:sns:${local.r}:${local.a}:${local.p}-${e}-*",
     "arn:aws:firehose:${local.r}:${local.a}:deliverystream/${local.p}-${e}-*",
