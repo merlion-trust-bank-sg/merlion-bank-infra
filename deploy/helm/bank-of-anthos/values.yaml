@@ -130,7 +130,7 @@ loadgenerator:
   image: { name: loadgenerator, digest: "" }
   users: "5"
 
-# Schema and demo data, loaded into RDS once per database (Argo CD PreSync hook)
+# Schema and demo data, loaded into RDS once per database (Argo CD Sync hook, templates/db-init.yaml)
 dbInit:
   accounts: { image: { name: accounts-db, digest: "" } }
   ledger: { image: { name: ledger-db, digest: "" } }
