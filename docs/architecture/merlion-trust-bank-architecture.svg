@@ -50,8 +50,8 @@
 <rect class="box" x="45" y="262" width="270" height="85" rx="4"/>
 <text class="t2" x="58" y="282">merlion-bank-app</text>
 <text class="s" x="58" y="301">build → SCA → image scan → ECR (ci-build)</text>
-<text class="s" x="58" y="319">staging promotion PR, auto-merged <tspan class="pl">PLANNED</tspan></text>
-<text class="s" x="58" y="337">prod digest: reviewed PR · no cluster access</text>
+<text class="s" x="58" y="319">signed (Sigstore) → promotion PR</text>
+<text class="s" x="58" y="337">approved by a teammate · no cluster access</text>
 <rect class="box" x="45" y="357" width="270" height="85" rx="4"/>
 <text class="t2" x="58" y="377">merlion-bank-infra</text>
 <text class="s" x="58" y="396">PR: checks + staging plan (ci-plan)</text>
@@ -71,19 +71,20 @@
 
 <text class="s" x="30" y="645">g4-merlion-ci-build / -plan / -prod-plan (read-only)</text>
 <text class="s" x="30" y="665">-staging / -prod: own env only; prod after approval</text>
+<text class="s" x="30" y="685">-record: adds deploy records to the audit bucket</text>
 
-<text class="m" x="30" y="705" font-size="12">NOTE</text>
-<text class="s" x="30" y="725">CI run logs are stored by GitHub,</text>
-<text class="s" x="30" y="743">outside AWS. Keep customer data</text>
-<text class="s" x="30" y="761">and app logs out of CI output.</text>
+<text class="m" x="30" y="720" font-size="12">NOTE</text>
+<text class="s" x="30" y="740">CI run logs are stored by GitHub,</text>
+<text class="s" x="30" y="758">outside AWS. Keep customer data</text>
+<text class="s" x="30" y="776">and app logs out of CI output.</text>
 
 <rect class="plan" x="30" y="900" width="300" height="58" rx="4"/>
 <text class="t" x="45" y="924">On-call engineer <tspan class="pl">PLANNED</tspan></text>
-<text class="s" x="45" y="945">Email + Telegram alerts (INF-16)</text>
+<text class="s" x="45" y="945">Telegram alerts (INF-16)</text>
 
 <!-- ===== Production account ===== -->
 <rect class="frame" x="380" y="130" width="780" height="590" rx="4"/>
-<text class="pl" x="395" y="151">OFF BY DEFAULT (enabled = false)</text>
+<text class="pl" x="395" y="151">BUILT, OFF BY DEFAULT · UP FOR THE DEMO</text>
 <text class="t" x="1145" y="152" text-anchor="end">Production environment · VPC across 2 AZs (us-east-1a / 1b)</text>
 
 <!-- Public subnets -->
@@ -170,7 +171,7 @@
 <text class="s" x="1208" y="229">Own state bucket + KMS key, own CI role</text>
 <text class="s" x="1208" y="247">Auto-apply on merge · Argo CD syncs from main</text>
 <text class="s" x="1208" y="265">loadgenerator · synthetic data only</text>
-<text class="s" x="1208" y="283">Torn down nightly, rebuilt by the pipeline</text>
+<text class="s" x="1208" y="283">Torn down on demand (teardown workflow)</text>
 <text class="s" x="1195" y="336">Isolation in one account: per-env roles, name and</text>
 <text class="s" x="1195" y="354">tag denies, permissions boundary (ADR-002).</text>
 
@@ -221,7 +222,7 @@
 <text class="s" x="400" y="970">Stack: kube-prometheus-stack, Loki, Alloy, YACE via Argo CD, namespace monitoring</text>
 
 <path class="parr" d="M1047 860 L1047 1015 L180 1015 L180 961" marker-end="url(#r)"/>
-<text class="m" x="430" y="1008">planned: Alertmanager → email / Telegram · alert text contains no customer data</text>
+<text class="m" x="430" y="1008">planned: Alertmanager → Telegram · alert text contains no customer data</text>
 
 <!-- ===== Audit ===== -->
 <rect class="frame" x="1180" y="740" width="380" height="300" rx="4"/>
@@ -233,10 +234,12 @@
 <rect class="red" x="1195" y="868" width="350" height="58" rx="4"/>
 <text class="t" x="1208" y="890">S3 Object Lock bucket (g4-merlion-audit)</text>
 <text class="s" x="1208" y="910">Governance · 365 days · deletes + bypass denied</text>
-<text class="s" x="1195" y="960">The pipeline can't change the trail.</text>
-<rect class="plan" x="1195" y="975" width="350" height="50" rx="4"/>
-<text class="s" x="1208" y="995">Deploy records (deploys/&lt;env&gt;/) · EKS audit</text>
-<text class="s" x="1208" y="1013">logs via Firehose <tspan class="pl">PLANNED</tspan></text>
+<text class="s" x="1195" y="947">Also in the bucket: deploy records (deploys/&lt;env&gt;/)</text>
+<text class="s" x="1195" y="964">and the EKS audit log (Firehose → eks-audit/).</text>
+<text class="s" x="1195" y="981">The pipeline can't change the trail.</text>
+<rect class="red" x="1195" y="991" width="350" height="40" rx="4"/>
+<text class="t2" x="1208" y="1008">Console-write alert</text>
+<text class="s" x="1208" y="1024">Console change by one of us → EventBridge → email</text>
 
 <!-- Footer -->
 <line x1="0" y1="1068" x2="1600" y2="1068" stroke="#D5D9DD" stroke-width="1"/>
