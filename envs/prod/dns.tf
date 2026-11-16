@@ -8,7 +8,8 @@ module "dns" {
 }
 
 locals {
-  app_hostname = module.dns.hostnames[local.environment]
+  app_hostname     = module.dns.hostnames[local.environment]
+  grafana_hostname = "grafana.${local.app_hostname}" # the health dashboard (INF-17)
 }
 
 data "aws_route53_zone" "course" {
@@ -20,8 +21,9 @@ data "aws_route53_zone" "course" {
 resource "aws_acm_certificate" "app" {
   count = local.enabled ? 1 : 0
 
-  domain_name       = local.app_hostname
-  validation_method = "DNS"
+  domain_name               = local.app_hostname
+  subject_alternative_names = [local.grafana_hostname]
+  validation_method         = "DNS"
 
   lifecycle {
     create_before_destroy = true

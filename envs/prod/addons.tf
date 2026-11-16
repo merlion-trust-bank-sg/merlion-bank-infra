@@ -19,6 +19,9 @@ module "addons" {
     # Written once by deploy/bootstrap/put-argocd-github-app.sh, outside Terraform, so it survives a
     # teardown (AWS-managed key). Secrets Manager adds a 6-character suffix to the ARN.
     ["arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:${local.name}/argocd/github-app-??????"],
+    # Alertmanager's Telegram token and Grafana's admin password (INF-16). Written once by
+    # deploy/bootstrap/put-alert-secret.sh, outside Terraform, so it survives a teardown and rebuild of the environment.
+    ["arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:${local.name}/monitoring/alerting-??????"],
   )
   secrets_kms_key_arn = module.secretsmanager_key[0].arn
 
