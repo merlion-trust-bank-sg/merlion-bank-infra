@@ -1,0 +1,16 @@
+# Keep at least one frontend up during node drains and upgrades
+{{- with .Values.services.frontend }}
+{{- if gt (int (include "boa.minReplicas" .)) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  labels:
+    {{- include "boa.labels" $ | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend
+{{- end }}
+{{- end }}

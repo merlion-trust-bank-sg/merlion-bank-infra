@@ -1,0 +1,27 @@
+# Bank of Anthos, staging. Image digests are changed only by promotion PRs.
+# Current images: merlion-bank-app commit 9cd10da (cd run 43012437391).
+image:
+  registry: 255945442255.dkr.ecr.us-east-1.amazonaws.com/merlion
+
+services:
+  frontend:
+    image: { digest: "sha256:72db092dd3f80a72d89f702cce2e4f6ebdda9172ec4381212bbce77f2cef6f56" }
+  userservice:
+    image: { digest: "sha256:a8b3465f7aed69d2940d4c15b42b07e66984e68b54f79cb25b8d80b44b795a60" }
+  contacts:
+    image: { digest: "sha256:d9dc5ed131783d470163da6b74c96c9787403bf5b068b607cbf3bbae02091253" }
+  ledgerwriter:
+    image: { digest: "sha256:ff8dfe01538a3999d755614a60bc2ae6e9425d355f1746263a34c00b4308caf6" }
+  balancereader:
+    image: { digest: "sha256:b4bcd7fea631dd03c569a15689dee99b2fab99288ab0c879e3f074b4358b9931" }
+  transactionhistory:
+    image: { digest: "sha256:a93674750c0758a52b6e682871cd07c2b1169a1c2523334296b5a339b8e225ee" }
+
+dbInit:
+  accounts: { image: { digest: "sha256:50efd29c7b6dff31e3dbb9a586134c05acc76cccf30f9f45d01f54ffc4fa2461" } }
+  ledger: { image: { digest: "sha256:00554869d0881e789fb60bc3fdf0b51b7149d8561c9aec90a8ddc3d9dee985dc" } }
+
+# Synthetic traffic in staging only
+loadgenerator:
+  enabled: true
+  image: { digest: "sha256:48c1240dc844928d4ffd95a90b2f3e77d105842bf1dadb218621022340df0b27" }

@@ -1,0 +1,44 @@
+# Argo CD's credentials for this GitHub org: a read-only GitHub App, as a private repo needs.
+#
+# bootstrap.sh fills in ${ENV} and applies this before installing Argo CD, so Argo CD can read the
+# repo from its first sync. External Secrets (installed just before) copies the App's key from
+# Secrets Manager (deploy/bootstrap/put-argocd-github-app.sh) into a Secret Argo CD recognises as a
+# credential template (repo-creds) for every repo under the org URL. Nothing here holds a secret.
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: aws-secrets-manager
+  namespace: argocd
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: us-east-1
+      # No auth block: the controller's own Pod Identity role is used (it can read only listed secrets)
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: github-repo-creds
+  namespace: argocd
+spec:
+  refreshInterval: 1h # a rotated key reaches Argo CD within the hour
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: SecretStore
+  target:
+    name: github-repo-creds
+    creationPolicy: Owner
+    template:
+      metadata:
+        labels:
+          argocd.argoproj.io/secret-type: repo-creds
+      data:
+        type: git
+        url: https://github.com/merlion-trust-bank-sg
+        githubAppID: "{{ .github_app_id }}"
+        githubAppInstallationID: "{{ .github_app_installation_id }}"
+        githubAppPrivateKey: "{{ .github_app_private_key }}"
+  dataFrom:
+    - extract:
+        key: g4-merlion-${ENV}/argocd/github-app

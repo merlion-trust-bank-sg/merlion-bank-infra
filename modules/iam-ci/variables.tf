@@ -73,3 +73,23 @@ variable "state_kms_key_arns" {
   description = "Layer => state KMS key ARN (bootstrap, staging, prod)"
   type        = map(string)
 }
+
+variable "dns_zone_id" {
+  description = "The course's shared public hosted zone (sctp-sandbox.com). Each env pipeline may change only records under its own name in dns_names."
+  type        = string
+}
+
+variable "dns_names" {
+  description = "Env => the app's hostname in dns_zone_id, e.g. { staging = \"merlion-staging.sctp-sandbox.com\" }"
+  type        = map(string)
+
+  validation {
+    condition     = alltrue([for e in keys(var.dns_names) : contains(["staging", "prod"], e)])
+    error_message = "Only staging and prod are supported."
+  }
+}
+
+variable "audit_kms_key_arn" {
+  description = "The audit trail's KMS key (modules/audit). Deploy roles need it to write deploy records, so the environment fence exempts it."
+  type        = string
+}

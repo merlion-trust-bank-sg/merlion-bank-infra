@@ -1,0 +1,57 @@
+# Points the app's hostname (merlion-staging.sctp-sandbox.com) at the ALB the Ingress gets, and updates
+# it when the ALB changes on a rebuild. Its AWS permissions come from the Pod Identity association
+# (Terraform, modules/addons): it may change only our records in the course's shared zone.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: external-dns
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: staging
+  template:
+    metadata:
+      name: external-dns
+    spec:
+      project: platform # deploy/bootstrap/projects.yaml
+      source:
+        repoURL: https://kubernetes-sigs.github.io/external-dns
+        chart: external-dns
+        targetRevision: 1.23.0
+        helm:
+          valuesObject:
+            provider:
+              name: aws
+            # Pods can't reach instance metadata (hop limit 1), so the region is passed in
+            env:
+              - name: AWS_DEFAULT_REGION
+                value: '{{index .metadata.annotations "region"}}'
+            serviceAccount:
+              name: external-dns
+            sources: [ingress]
+            # Only the app's hostname, in only the course zone. The IAM policy enforces the same.
+            domainFilters: ['{{index .metadata.annotations "app_hostname"}}']
+            # The filter is our hostname, but the zone is its parent (sctp-sandbox.com). Without
+            # --aws-zone-match-parent the domain filter rules the course zone out and nothing is written.
+            extraArgs:
+              - '--zone-id-filter={{index .metadata.annotations "dns_zone_id"}}'
+              - --aws-zone-match-parent
+            # sync: also deletes records it created once their Ingress is gone. It only ever deletes
+            # records whose ownership TXT record carries this owner ID, never other groups' records.
+            policy: sync
+            registry: txt
+            txtOwnerId: '{{index .metadata.annotations "cluster_name"}}'
+      destination:
+        server: '{{.server}}'
+        namespace: external-dns
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

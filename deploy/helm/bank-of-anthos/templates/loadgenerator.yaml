@@ -1,0 +1,45 @@
+{{- if .Values.loadgenerator.enabled }}
+# Synthetic users logging in, checking balances and making transfers (Locust)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgenerator
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"   # after the services it calls
+  labels:
+    app: loadgenerator
+    {{- include "boa.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgenerator
+  template:
+    metadata:
+      labels:
+        app: loadgenerator
+        {{- include "boa.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "boa.podSecurity" . | nindent 6 }}
+      containers:
+        - name: loadgenerator
+          image: {{ include "boa.image" (dict "root" . "img" .Values.loadgenerator.image) }}
+          env:
+            - name: FRONTEND_ADDR
+              value: frontend:80
+            - name: USERS
+              value: {{ .Values.loadgenerator.users | quote }}
+            - name: LOG_LEVEL
+              value: error
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          {{- include "boa.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

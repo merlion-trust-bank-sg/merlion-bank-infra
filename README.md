@@ -10,11 +10,25 @@ state bucket and KMS key, per-environment CI roles, and IAM guardrails (ADR-002)
 
 | Path | What | Applied by |
 |---|---|---|
-| `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); later ECR, audit trail | admin, once (see below) |
-| `modules/` | kms, network, eks, rds, ecr, secrets, iam-ci, audit, addons | - |
+| `bootstrap/` | State buckets + KMS keys (one per layer), GitHub OIDC provider lookup; `g4-merlion-ci-*` roles (`modules/iam-ci`); ECR; audit trail (`modules/audit`, ADR-004) | admin, once (see below) |
+| `modules/` | kms, network, eks, rds, ecr, secrets, iam-ci, audit, addons, dns | - |
 | `envs/{staging,prod}` | one root per environment, own state bucket and key | **pipeline only** |
 | `.github/workflows/tf-plan.yml` | PR: gitleaks, fmt, validate, tflint, checkov, staging plan | GitHub Actions |
 | `.github/workflows/tf-apply.yml` | main: apply staging -> plan prod -> approval -> apply prod | GitHub Actions |
+
+## Staging
+
+**https://merlion-staging.sctp-sandbox.com** (prod will be `merlion.sctp-sandbox.com`). The ALB only
+answers for this hostname: its own `*.elb.amazonaws.com` address returns 404.
+
+- `sctp-sandbox.com` is the course's shared Route 53 zone (`Z00541411T1NGPV97B5C0`). The **instructor
+  allows groups to add their own records** to it. Other groups have records there, so IAM limits our
+  CI roles and ExternalDNS to names under our own hostnames.
+- The hostnames and the zone ID are defined once, in `modules/dns`. Bootstrap gives each CI role
+  permission for its env's hostname; the env uses the same values for its certificate and ExternalDNS.
+- Changing a hostname: change `modules/dns`, apply **bootstrap first** (admin), then let the pipeline
+  apply the env. In the other order, the env apply fails with AccessDenied on the certificate's
+  validation record.
 
 ## CI roles
 
@@ -28,6 +42,7 @@ Each role can be assumed by one exact kind of job (the OIDC `sub` claim):
 | `g4-merlion-ci-prod-plan` | `merlion-bank-infra`, `main`, job without an environment | Read-only `terraform plan` for prod (prod state only) |
 | `g4-merlion-ci-staging` | `merlion-bank-infra`, GitHub environment `staging` | Change staging resources only |
 | `g4-merlion-ci-prod` | `merlion-bank-infra`, GitHub environment `production`, after a reviewer approves | Change prod resources only |
+| `g4-merlion-ci-record` | `merlion-bank-infra`, `main`, job without an environment (`deploy-record.yml`) | Add deploy records under `deploys/<env>/` in the audit bucket. Nothing else: no read, no delete. |
 
 App deploys go through Argo CD, which pulls from this repo, so the app repo never gets
 staging or prod credentials.
@@ -62,6 +77,60 @@ In a brand-new account the state bucket doesn't exist yet: comment out the block
 
 State buckets are protected by `prevent_destroy` and a bucket policy that denies `s3:DeleteBucket`
 and `s3:DeleteObjectVersion` to everyone, so they outlive environment teardowns.
+
+To receive console-write alerts (below), set an address when applying bootstrap and accept the
+confirmation email AWS sends: `export TF_VAR_alert_email=<address>`.
+
+## Argo CD's GitHub credentials (once, by an org owner)
+
+**Before the first merge that includes this, and before a new environment's first bootstrap:** the
+environment's key must be stored (step 4). `bootstrap.sh` stops without it, so every `tf-apply` run
+would fail at the bootstrap step.
+
+Argo CD reads this repo as it would read a private one: with a GitHub App that can only read
+`merlion-bank-infra` (why: ADR-007). The repo stays public because GitHub Free enforces rulesets and
+environment required reviewers (the `production` approval) only on public repos; the credentials are
+real either way (GitHub rejects a revoked key on a public repo too).
+
+1. **Create the App:** org settings → Developer settings → GitHub Apps → New GitHub App.
+   - Name `merlion-argocd`; Homepage URL: this repo; **Webhook: Active unticked**.
+   - Repository permissions: **Contents: Read-only** (Metadata: Read-only is added automatically).
+     Nothing else.
+   - Where can this App be installed: **Only on this account**.
+2. **Install it** (App page → Install App) on the org, **Only select repositories →
+   `merlion-bank-infra`**. The installation ID is the number at the end of the installation page's URL.
+3. **Generate two private keys** (App page → Private keys), one per environment, so either can be
+   revoked alone.
+4. **Store them**, as an admin in account 255945442255:
+
+   ```bash
+   deploy/bootstrap/put-argocd-github-app.sh staging <app id> <installation id> <staging key.pem>
+   deploy/bootstrap/put-argocd-github-app.sh prod    <app id> <installation id> <prod key.pem>
+   ```
+
+   Then delete the `.pem` files. The secrets (`g4-merlion-<env>/argocd/github-app`) are outside
+   Terraform, so they survive a teardown.
+
+`bootstrap.sh` installs External Secrets, which copies the key into Argo CD's namespace as a
+`repo-creds` Secret (`deploy/bootstrap/repo-creds.yaml`), then installs Argo CD. Argo CD then manages
+both itself (`deploy/platform/<env>/external-secrets.yaml`, `argocd.yaml`). The pipeline never reads
+the key. **Rotate:** generate a new key, run the script again, delete the old key on GitHub; Argo CD
+picks it up within the hour.
+
+## Region and change guardrails
+
+Data residency (HC-1, ADR-006) and "no direct console changes" (HC-2) are enforced in three places:
+
+| Guardrail | Where | What it stops |
+|---|---|---|
+| Region validation | `variable "region"` in `bootstrap/` and every `envs/*` root | Terraform refuses any region other than `us-east-1` |
+| Region deny | `DenyOutsideApprovedRegion` in `modules/iam-ci/guardrails.tf`, on every CI role and every workload permissions boundary | Any API call outside `us-east-1` (global services such as IAM excepted) is denied, even if code asks for it |
+| Console-write alert | `modules/console-alert`, applied from `bootstrap/` | A team member changing something in the AWS console: EventBridge matches the CloudTrail event and emails who, what, where and when |
+
+The alert watches the team's own IAM users only (`team_iam_users` in `bootstrap/variables.tf`):
+other groups share this account and use the console all the time. Console *views* don't alert,
+only write calls. The rule runs in `us-east-1`, where our resources and global services such as
+IAM are recorded.
 
 ## Pipeline
 
@@ -104,3 +173,26 @@ If prod has no changes, the run ends after the prod plan and asks for no approva
 
 Every AWS call from the pipeline uses the role session name `ci-<run id>-<attempt>`, so CloudTrail
 events link back to the GitHub run, its commit and its approver.
+
+## Cost controls
+
+Monthly estimate: `docs/cost-estimate.md` (DOC-05).
+
+**Tags.** Every resource carries `Project`, `Team`, `Environment`, `ManagedBy` and `Stack`: from the
+provider's `default_tags` for Terraform resources, the node launch template for EC2 instances,
+volumes and ENIs, and `defaultTags` on the AWS Load Balancer Controller for ALBs, target groups and
+their security groups. `Team = g4` also lets the CI roles tell our resources from other groups' in
+the shared account.
+
+**Staging teardown.** `.github/workflows/teardown.yml` destroys staging every day at 21:00 SGT, and
+on demand with **Run workflow**. It first stops Argo CD and removes the workload namespaces, so the
+LB Controller deletes its ALBs and the EBS CSI driver deletes the volumes, then runs
+`terraform destroy`. Bring staging back with **Run workflow** on `tf-apply` (apply staging, then
+Argo CD installs everything else). Running staging for working hours only costs about USD 90 a
+month instead of about USD 280 (DOC-05).
+
+**Budgets alert: not available.** The training account's learner policy explicitly denies AWS
+Budgets and Cost Explorer (`budgets:*`, `ce:*`), and billing is handled by the organisation's
+management account, so a Budgets alert per `Environment` tag can't be created from this account.
+Spend is controlled with the tags above, the teardown and the estimate in DOC-05; in a real account,
+an AWS Budgets alert on `Environment = prod` and `Environment = staging` would be added in `bootstrap/`.

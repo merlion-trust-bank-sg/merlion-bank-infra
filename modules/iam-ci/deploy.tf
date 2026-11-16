@@ -9,7 +9,7 @@ data "aws_iam_policy_document" "deploy" {
   #checkov:skip=CKV_AWS_356:EC2, ELB, Auto Scaling, KMS and ACM resources get random IDs, so they can't be scoped by name; the env fence and Team denies limit them
   #checkov:skip=CKV_AWS_109:IAM changes only on own-env roles carrying the env's permissions boundary (IamWithBoundary); broad policies can't be attached
   #checkov:skip=CKV_AWS_111:Writes are limited to own-env names, or to unscoped services narrowed by the env fence and Team denies
-  #checkov:skip=CKV_AWS_107:No secret reads: only RDS-managed secret create/tag; GetSecretValue is never granted
+  #checkov:skip=CKV_AWS_107:Flagged for ec2:GetPasswordData (ec2:* on *); EKS nodes are Linux, so there's no Windows password. Secret reads are denied (DenyReadingSecrets)
   for_each = var.environments
 
   # Services whose resources can be scoped by name to this env
@@ -19,7 +19,6 @@ data "aws_iam_policy_document" "deploy" {
       "eks:*",
       "rds:*",
       "s3:*",
-      "secretsmanager:*",
       "logs:*",
       "sns:*",
       "firehose:*",
@@ -40,6 +39,27 @@ data "aws_iam_policy_document" "deploy" {
       "acm:*",
     ]
     resources = ["*"]
+  }
+
+  # Only what aws_secretsmanager_secret and a write-only aws_secretsmanager_secret_version call
+  # (AWS provider 6.x). With secret_string_wo the provider never reads the value back.
+  statement {
+    sid = "OwnSecrets"
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:UpdateSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:PutResourcePolicy",
+      "secretsmanager:DeleteResourcePolicy",
+      "secretsmanager:TagResource",
+      "secretsmanager:UntagResource",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:ListSecretVersionIds",
+      "secretsmanager:UpdateSecretVersionStage",
+    ]
+    resources = [local.env_secret_arns[each.key]]
   }
 
   # manage_master_user_password: RDS creates the rds!... secret on the caller's behalf, so the caller
@@ -131,6 +151,19 @@ data "aws_iam_policy_document" "deploy" {
     }
   }
 
+  # DNS validation records for the env's ACM certificate, in the course's shared zone. Only names under
+  # the env's own hostname: other groups have records in this zone.
+  statement {
+    sid       = "OwnDnsRecordsOnly"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = ["arn:aws:route53:::hostedzone/${var.dns_zone_id}"]
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["*.${var.dns_names[each.key]}"]
+    }
+  }
+
   # Deploy records for the audit trail: write-only, own env's prefix
   statement {
     sid       = "WriteDeployRecords"
@@ -206,6 +239,27 @@ data "aws_iam_policy_document" "deploy" {
       variable = "aws:ResourceTag/Team"
       values   = ["false"]
     }
+  }
+
+  # The Team tag decides what counts as ours (DenyDestroyingOtherTeams), so re-tagging another team's
+  # Auto Scaling group would let us delete it. EKS creates node groups' Auto Scaling groups without our
+  # tags and we tag them ourselves, so untagged groups can't simply be denied as above: allow tagging
+  # only this env's node groups, which EKS names eks-<node group name>-<id>.
+  statement {
+    sid     = "DenyTaggingOtherAutoScalingGroups"
+    effect  = "Deny"
+    actions = ["autoscaling:CreateOrUpdateTags", "autoscaling:DeleteTags"]
+    not_resources = [
+      "arn:aws:autoscaling:${local.r}:${local.a}:autoScalingGroup:*:autoScalingGroupName/eks-${local.p}-${each.key}-*",
+    ]
+  }
+
+  # Secret values (JWT signing key, RDS master passwords) are only for the workloads (External Secrets)
+  statement {
+    sid       = "DenyReadingSecrets"
+    effect    = "Deny"
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:BatchGetSecretValue"]
+    resources = ["*"]
   }
 
   # Application logs can hold customer data; the pipeline never reads them

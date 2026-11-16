@@ -10,6 +10,17 @@ locals {
     # These run as pods, so they need nodes first
     coredns            = { before_nodes = false, role = null, service_account = null }
     aws-ebs-csi-driver = { before_nodes = false, role = "ebs_csi", service_account = "ebs-csi-controller-sa" }
+    # Pod CPU and memory use for HorizontalPodAutoscalers and kubectl top. No AWS access.
+    metrics-server = { before_nodes = false, role = null, service_account = null }
+  }
+
+  # Volumes the EBS CSI driver creates (e.g. for Prometheus) aren't Terraform resources, so the
+  # provider's default tags don't reach them. Tag them the same way, for cost tracking and the
+  # training account's cleanup, which skips resources with our Project tag.
+  addon_configuration = {
+    aws-ebs-csi-driver = jsonencode({
+      controller = { extraVolumeTags = data.aws_default_tags.current.tags }
+    })
   }
 }
 
@@ -37,6 +48,7 @@ resource "aws_eks_addon" "after_nodes" {
   cluster_name                = aws_eks_cluster.this.name
   addon_name                  = each.key
   addon_version               = data.aws_eks_addon_version.latest[each.key].version
+  configuration_values        = lookup(local.addon_configuration, each.key, null)
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 

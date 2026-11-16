@@ -15,8 +15,41 @@ variable "account_id" {
 }
 
 variable "project" {
-  type    = string
-  default = "merlion-trust-bank"
+  description = "Value of the Project tag. The training account's nightly cleanup skips resources tagged with the group's value (case-sensitive)."
+  type        = string
+  default     = "capstone-project-group-04"
+
+  validation {
+    condition     = var.project == "capstone-project-group-04"
+    error_message = "Project must be exactly capstone-project-group-04 (lower case): the nightly cleanup only skips resources with that tag."
+  }
+}
+
+variable "enabled" {
+  description = <<-EOT
+    Whether prod exists. false = torn down: no resources, no cost, and plan prod shows no changes on
+    every merge. Changed only in a reviewed PR; the apply then needs a production approval, so
+    bringing prod up and tearing it down are both approved changes. To tear down, also set
+    deletion_protection = false in rds.tf in the same PR (each database keeps a dated final snapshot).
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "import_eks_log_group" {
+  description = <<-EOT
+    Adopt the EKS control-plane log group a prod teardown left behind (protect_log_group). Set to true
+    in the PR that switches prod back on (enabled = true) after a teardown; false for the first build
+    ever, when the group doesn't exist yet. Once imported it's a no-op. Set back to false in the PR
+    that tears prod down.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.import_eks_log_group || var.enabled
+    error_message = "import_eks_log_group needs enabled = true: there's no EKS module to import into while prod is off."
+  }
 }
 
 variable "team" {

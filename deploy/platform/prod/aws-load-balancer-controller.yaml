@@ -1,0 +1,48 @@
+# Creates ALBs from Ingress objects. Its AWS permissions come from the Pod Identity association
+# (Terraform, modules/addons) on the service account named below.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: aws-load-balancer-controller
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    # One Application for this cluster, filled in from the annotations bootstrap.sh writes
+    - clusters:
+        selector:
+          matchLabels:
+            environment: prod
+  template:
+    metadata:
+      name: aws-load-balancer-controller
+    spec:
+      project: platform # deploy/bootstrap/projects.yaml
+      source:
+        repoURL: https://aws.github.io/eks-charts
+        chart: aws-load-balancer-controller
+        targetRevision: 3.6.2
+        helm:
+          valuesObject:
+            clusterName: '{{index .metadata.annotations "cluster_name"}}'
+            # Pods can't reach instance metadata (hop limit 1), so region and VPC are passed in
+            region: '{{index .metadata.annotations "region"}}'
+            vpcId: '{{index .metadata.annotations "vpc_id"}}'
+            serviceAccount:
+              name: aws-load-balancer-controller
+            # The ALBs, target groups and security groups the controller creates aren't Terraform
+            # resources, so they don't get the provider's default tags. These match them, and the
+            # Project tag is what the training account's nightly cleanup skips (case-sensitive).
+            defaultTags:
+              Project: capstone-project-group-04
+              Team: g4
+              Environment: '{{.metadata.labels.environment}}'
+              ManagedBy: aws-load-balancer-controller
+      destination:
+        server: '{{.server}}'
+        namespace: kube-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

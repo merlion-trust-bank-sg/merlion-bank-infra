@@ -13,6 +13,12 @@ resource "aws_cloudwatch_log_group" "cluster" {
   name              = "/aws/eks/${var.name}/cluster"
   retention_in_days = var.cluster_log_retention_days
   kms_key_id        = var.logs_kms_key_arn
+
+  # Prod: a teardown leaves the group (and its year of control-plane logs) in place, and the pipeline
+  # can't delete it (DenyEksLogTampering in modules/iam-ci). A rebuild must import the leftover group
+  # first (import_eks_log_group in envs/prod). Staging's group is deleted with staging by the teardown
+  # workflow; the copy that has to last a year is the one in the Object Lock bucket (audit_export).
+  skip_destroy = var.protect_log_group
 }
 
 resource "aws_eks_cluster" "this" {
@@ -126,5 +132,20 @@ resource "aws_eks_node_group" "default" {
   lifecycle {
     # Leave room for a cluster autoscaler to change the count later without Terraform reverting it
     ignore_changes = [scaling_config[0].desired_size]
+  }
+}
+
+# EKS creates the node group's Auto Scaling group itself and doesn't copy our tags onto it, so tag it
+# here. Without the Project tag the training account's nightly cleanup deletes the group, which
+# terminates every node. Not propagated: the launch template already tags the instances.
+resource "aws_autoscaling_group_tag" "node" {
+  for_each = data.aws_default_tags.current.tags
+
+  autoscaling_group_name = aws_eks_node_group.default.resources[0].autoscaling_groups[0].name
+
+  tag {
+    key                 = each.key
+    value               = each.value
+    propagate_at_launch = false
   }
 }
