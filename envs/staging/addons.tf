@@ -15,7 +15,7 @@ module "addons" {
     [for db in module.rds.databases : db.master_secret_arn],
     [aws_secretsmanager_secret.jwt.arn],
     # Alertmanager's Telegram token and Grafana's admin password (INF-16). Written once by
-    # deploy/bootstrap/put-alert-secret.sh, outside Terraform, so it survives the nightly teardown.
+    # deploy/bootstrap/put-alert-secret.sh, outside Terraform, so it survives a teardown and rebuild of the environment.
     ["arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:${local.name}/monitoring/alerting-??????"],
   )
   secrets_kms_key_arn = module.secretsmanager_key.arn
