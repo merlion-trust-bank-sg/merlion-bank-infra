@@ -5,11 +5,11 @@ image:
 
 services:
   frontend:
-    image: { digest: "sha256:423bbf3bd665db8b935953283d435a62be51bef0c8ca4ef1d68799f4432b601e" }
+    image: { digest: "sha256:d08c70d5df56c9693a627a1b34f278f8678fe418b347c65a5bd2da647ef3c676" }
   userservice:
-    image: { digest: "sha256:f5b89941196e3c71576291f9027d64206f73dc0ea733828d3dd157008364036a" }
+    image: { digest: "sha256:b33ac8e7378d522dc1d7d77a0ec4fb5c7836a0e0e16cb773685f27370cafa463" }
   contacts:
-    image: { digest: "sha256:1bb84f959428526c740a6f33c41dc941796544186ba7fa77ea7873bb015e511f" }
+    image: { digest: "sha256:01619254663f0fddac9a077a83a329c35117a65939b63c2d63154f13a4fb7d85" }
   ledgerwriter:
     image: { digest: "sha256:ff8dfe01538a3999d755614a60bc2ae6e9425d355f1746263a34c00b4308caf6" }
   balancereader:
@@ -18,10 +18,10 @@ services:
     image: { digest: "sha256:a93674750c0758a52b6e682871cd07c2b1169a1c2523334296b5a339b8e225ee" }
 
 dbInit:
-  accounts: { image: { digest: "sha256:5be1eac2fe98075a322621ca6b77c41095dd98050dc96cc4851c9651d2903aec" } }
-  ledger: { image: { digest: "sha256:8a403d645a0bbdf13484beb6f410682926555e7de7334684ccc043615057acff" } }
+  accounts: { image: { digest: "sha256:04643b49e81ed935c1f21b43560ad1da60a586c488152d6614cfa013d6174a04" } }
+  ledger: { image: { digest: "sha256:8c75afedd353646db7c17fe8c8c35fcc0f9233446ec29f101213c50acebf5b84" } }
 
 # Synthetic traffic in staging only
 loadgenerator:
   enabled: true
-  image: { digest: "sha256:41b1e408b2fd8cbc461a17853225a8b04596f1b5caea9a69d0a3ef822542ce30" }
+  image: { digest: "sha256:e01d69c9cba3f6c0f113f0ec3ef9f3d1e011fe60f8442c865d5cb1a34197edd4" }

@@ -47,7 +47,9 @@ data "aws_iam_policy_document" "workload_boundary" {
   for_each = var.environments
   source_policy_documents = [
     data.aws_iam_policy_document.workload_boundary_base.json,
-    data.aws_iam_policy_document.protect_bootstrap.json,
+    # Not all of protect_bootstrap: the statements it adds for the deploy roles (protect_bootstrap_extra)
+    # are already covered here, and leaving them out keeps the boundary under IAM's 6,144-character limit
+    data.aws_iam_policy_document.protect_bootstrap_common.json,
     data.aws_iam_policy_document.env_fence[each.key].json,
   ]
 }

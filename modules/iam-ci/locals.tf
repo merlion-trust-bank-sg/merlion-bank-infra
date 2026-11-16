@@ -17,7 +17,13 @@ locals {
     e => "arn:aws:iam::${local.a}:policy/${local.p}-${e}-workload-boundary"
   }
 
+  # The env's own secrets (g4-merlion-<env>/app/jwt). Managed through a short action list in deploy.tf.
+  env_secret_arns = { for e in keys(var.environments) :
+    e => "arn:aws:secretsmanager:${local.r}:${local.a}:secret:${local.p}-${e}/*"
+  }
+
   # Resources owned by one environment, identified by name. Allowed for that env, denied to the other.
+  # Everything the env stacks create is named g4-merlion-<env>..., after any fixed AWS path (/aws/eks/).
   env_named_arns = { for e in keys(var.environments) : e => [
     "arn:aws:s3:::${local.p}-${e}-*",
     "arn:aws:s3:::${local.p}-${e}-*/*",
@@ -27,14 +33,21 @@ locals {
     "arn:aws:rds:${local.r}:${local.a}:*:${local.p}-${e}*",
     "arn:aws:iam::${local.a}:role/${local.p}-${e}-*",
     "arn:aws:iam::${local.a}:policy/${local.p}-${e}-*",
-    "arn:aws:secretsmanager:${local.r}:${local.a}:secret:${local.p}/${e}/*",
+    local.env_secret_arns[e],
     "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-${e}/*",
-    "arn:aws:logs:${local.r}:${local.a}:log-group:/${local.p}/${e}/*",
     "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/vpc/${local.p}-${e}*",
     "arn:aws:sns:${local.r}:${local.a}:${local.p}-${e}-*",
     "arn:aws:firehose:${local.r}:${local.a}:deliverystream/${local.p}-${e}-*",
     "arn:aws:cloudwatch:${local.r}:${local.a}:alarm:${local.p}-${e}-*",
   ] }
+
+  # Prod's EKS control-plane log group (and its streams), which no pipeline may delete. Staging's isn't
+  # included: it's destroyed with staging by the teardown workflow (its audit log is in the Object Lock
+  # bucket), and envs/staging doesn't set protect_log_group.
+  eks_log_group_arns = [
+    "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-prod/*",
+    "arn:aws:logs:${local.r}:${local.a}:log-group:/aws/eks/${local.p}-prod/*:*",
+  ]
 
   # Created by other bootstrap PRs; protected by name so the rules hold as soon as they exist
   audit_bucket = "${local.p}-audit-${local.a}"
