@@ -2,6 +2,8 @@
 One HorizontalPodAutoscaler per service with hpa.enabled (frontend only for now). It scales the
 Deployment on average CPU use relative to the pods' CPU request; metrics-server (EKS add-on) provides
 the numbers. The Deployment leaves out replicas when this is on, so Argo CD doesn't reset the count.
+Wave 3, after the Deployments (wave 2): an HPA whose Deployment doesn't exist yet is Degraded, and
+Argo CD would wait on it forever before creating the Deployments.
 */}}
 {{- range $name, $svc := .Values.services }}
 {{- with $svc.hpa }}
@@ -14,6 +16,8 @@ metadata:
   labels:
     app: {{ $name }}
     {{- include "boa.labels" $ | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
