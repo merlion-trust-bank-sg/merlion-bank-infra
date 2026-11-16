@@ -80,6 +80,38 @@ and `s3:DeleteObjectVersion` to everyone, so they outlive environment teardowns.
 To receive console-write alerts (below), set an address when applying bootstrap and accept the
 confirmation email AWS sends: `export TF_VAR_alert_email=<address>`.
 
+## Argo CD's GitHub credentials (once, by an org owner)
+
+Argo CD reads this repo as it would read a private one: with a GitHub App that can only read
+`merlion-bank-infra`. The repo stays public because GitHub Free enforces rulesets and environment
+required reviewers (the `production` approval) only on public repos; the credentials are real either
+way (GitHub rejects a revoked key on a public repo too).
+
+1. **Create the App:** org settings → Developer settings → GitHub Apps → New GitHub App.
+   - Name `merlion-argocd`; Homepage URL: this repo; **Webhook: Active unticked**.
+   - Repository permissions: **Contents: Read-only** (Metadata: Read-only is added automatically).
+     Nothing else.
+   - Where can this App be installed: **Only on this account**.
+2. **Install it** (App page → Install App) on the org, **Only select repositories →
+   `merlion-bank-infra`**. The installation ID is the number at the end of the installation page's URL.
+3. **Generate two private keys** (App page → Private keys), one per environment, so either can be
+   revoked alone.
+4. **Store them**, as an admin in account 255945442255:
+
+   ```bash
+   deploy/bootstrap/put-argocd-github-app.sh staging <app id> <installation id> <staging key.pem>
+   deploy/bootstrap/put-argocd-github-app.sh prod    <app id> <installation id> <prod key.pem>
+   ```
+
+   Then delete the `.pem` files. The secrets (`g4-merlion-<env>/argocd/github-app`) are outside
+   Terraform, so they survive a teardown.
+
+`bootstrap.sh` installs External Secrets, which copies the key into Argo CD's namespace as a
+`repo-creds` Secret (`deploy/bootstrap/repo-creds.yaml`), then installs Argo CD. Argo CD then manages
+both itself (`deploy/platform/<env>/external-secrets.yaml`, `argocd.yaml`). The pipeline never reads
+the key. **Rotate:** generate a new key, run the script again, delete the old key on GitHub; Argo CD
+picks it up within the hour.
+
 ## Region and change guardrails
 
 Data residency (HC-1, ADR-006) and "no direct console changes" (HC-2) are enforced in three places:
