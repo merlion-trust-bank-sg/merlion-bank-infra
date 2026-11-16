@@ -1,0 +1,47 @@
+# Argo CD manages itself. bootstrap.sh installs it once on a new cluster (same chart, version and
+# values, read from here); from then on a change to Argo CD is a reviewed change to this file or to
+# deploy/bootstrap/argocd-values.yaml, and self-heal reverts changes made by hand.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  # Deleting this ApplicationSet (or the Application) must never uninstall Argo CD
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: prod
+  template:
+    metadata:
+      name: argocd
+    spec:
+      project: platform # deploy/bootstrap/projects.yaml
+      sources:
+        # The OCI copy of the chart: the classic Helm repo timed out with 504s (no oci:// in repoURL)
+        - repoURL: ghcr.io/argoproj/argo-helm
+          chart: argo-cd
+          targetRevision: 10.17.0
+          helm:
+            releaseName: argocd # the bootstrap's Helm release name, so the resources match
+            valueFiles:
+              - $values/deploy/bootstrap/argocd-values.yaml
+        - repoURL: https://github.com/merlion-trust-bank-sg/merlion-bank-infra
+          targetRevision: '{{index .metadata.annotations "git_revision"}}'
+          ref: values
+      destination:
+        server: '{{.server}}'
+        namespace: argocd
+      syncPolicy:
+        automated:
+          # A bad commit must not delete parts of Argo CD; removals are done by hand, deliberately
+          prune: false
+          selfHeal: true
+        syncOptions:
+          # The CRDs are too large for client-side apply's last-applied annotation
+          - ServerSideApply=true

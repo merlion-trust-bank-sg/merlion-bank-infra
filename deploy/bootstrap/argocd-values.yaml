@@ -1,10 +1,17 @@
-# Argo CD itself, installed by deploy/bootstrap/bootstrap.sh. Only what we use: no SSO (Dex), no
-# notifications, single replicas. The ApplicationSet controller stays: the add-ons are ApplicationSets.
+# Argo CD itself: installed by deploy/bootstrap/bootstrap.sh on a new cluster, then managed by Argo CD
+# (deploy/platform/<env>/argocd.yaml). Only what we use: no SSO (Dex), no notifications, single
+# replicas. The ApplicationSet controller stays: the add-ons are ApplicationSets.
 dex:
   enabled: false
 notifications:
   enabled: false
 configs:
+  cm:
+    # How often Argo CD checks Git for changes: every 30-40 s instead of the default 2-3 min, so a merged
+    # promotion or rollback deploys within about a minute. There's no webhook: Argo CD isn't reachable
+    # from the internet. One repo and about ten apps, so the extra polling is light.
+    timeout.reconciliation: 30s
+    timeout.reconciliation.jitter: 10s
   params:
     # Reached with kubectl port-forward for now; TLS comes with the ALB in front of it
     server.insecure: true
