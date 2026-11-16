@@ -56,7 +56,7 @@ body="Sets \`$TO\` to the digests staging runs on \`main\`, as of [${from_sha::7
 
 $smoke
 
-Opened by [promote-prod run $GITHUB_RUN_ID]($RUN_URL), started by @$GITHUB_ACTOR. **Needs an approval from someone else; merging it is the prod deploy** (Argo CD syncs prod within ~3 minutes). The \`prod promotion only\` check confirms every digest equals staging's and was built and signed by merlion-bank-app's cd on \`main\`."
+Opened by [promote-prod run $GITHUB_RUN_ID]($RUN_URL), started by @$GITHUB_ACTOR. **Needs an approval from someone else; merging it is the prod deploy** (Argo CD syncs prod within about a minute). The \`prod promotion only\` check confirms every digest equals staging's and was built and signed by merlion-bank-app's cd on \`main\`."
 
 pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')"
 if [ -z "$pr" ]; then
