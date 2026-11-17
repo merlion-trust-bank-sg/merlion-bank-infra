@@ -70,6 +70,21 @@ spec:
                   # smtp_from: <team mailbox>
                   # smtp_auth_username: <team mailbox>
                   # smtp_auth_password_file: /etc/alertmanager/secrets/alertmanager-notify/smtp-password
+                # The chart's default inhibit rules (kube-prometheus-stack 93.1.1). Setting `config` replaces
+                # the chart's whole config, so they are restated here: a critical alert silences the
+                # warning/info alerts of the same name and namespace, and info alerts stay quiet unless
+                # something else is wrong in that namespace.
+                inhibit_rules:
+                  - source_matchers: ['severity = critical']
+                    target_matchers: ['severity =~ warning|info']
+                    equal: [namespace, alertname]
+                  - source_matchers: ['severity = warning']
+                    target_matchers: ['severity = info']
+                    equal: [namespace, alertname]
+                  - source_matchers: ['alertname = InfoInhibitor']
+                    target_matchers: ['severity = info']
+                    equal: [namespace]
+                  - target_matchers: ['alertname = InfoInhibitor']
                 route:
                   receiver: team
                   group_by: [alertname, namespace]
@@ -138,9 +153,47 @@ spec:
               grafana.ini:
                 server:
                   root_url: 'https://grafana.{{index .metadata.annotations "app_hostname"}}'
-                # The health dashboard is what people see after logging in
-                dashboards:
-                  default_home_dashboard_path: /tmp/dashboards/bank-health.json
+              # Read-only login for assessors and other non-team viewers (INF-17). Grafana keeps no
+              # storage here, so a user added by hand would vanish on every restart; this sidecar creates
+              # the Viewer user (or resets its password) each time the pod starts. Credentials come
+              # from Secrets Manager through External Secrets (Secret grafana-admin).
+              extraContainers: |
+                - name: viewer-user
+                  image: curlimages/curl:8.11.1
+                  env:
+                    - name: ADMIN_USER
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: admin-user } }
+                    - name: ADMIN_PASSWORD
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: admin-password } }
+                    - name: VIEWER_USER
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: viewer-user } }
+                    - name: VIEWER_PASSWORD
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: viewer-password } }
+                  command: ["/bin/sh", "-c"]
+                  args:
+                    - |
+                      api=http://localhost:3000/api
+                      until curl -sf "$api/health" >/dev/null; do sleep 5; done
+                      code=$(curl -s -o /dev/null -w '%{http_code}' -u "$ADMIN_USER:$ADMIN_PASSWORD" \
+                        -H 'Content-Type: application/json' -X POST "$api/admin/users" \
+                        -d "{\"name\":\"Viewer\",\"login\":\"$VIEWER_USER\",\"password\":\"$VIEWER_PASSWORD\"}")
+                      if [ "$code" = 412 ]; then
+                        id=$(curl -s -u "$ADMIN_USER:$ADMIN_PASSWORD" "$api/users/lookup?loginOrEmail=$VIEWER_USER" \
+                          | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
+                        code=$(curl -s -o /dev/null -w '%{http_code}' -u "$ADMIN_USER:$ADMIN_PASSWORD" \
+                          -H 'Content-Type: application/json' -X PUT "$api/admin/users/$id/password" \
+                          -d "{\"password\":\"$VIEWER_PASSWORD\"}")
+                      fi
+                      echo "viewer user $VIEWER_USER: HTTP $code"
+                      while true; do sleep 3600; done
+                  resources:
+                    requests: { cpu: 5m, memory: 16Mi }
+                    limits: { memory: 32Mi }
+                  securityContext:
+                    runAsNonRoot: true
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: true
+                    capabilities: { drop: [ALL] }
               # Helm test pods aren't used with Argo CD
               testFramework:
                 enabled: false

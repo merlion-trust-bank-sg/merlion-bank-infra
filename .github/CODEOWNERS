@@ -12,7 +12,7 @@
 /modules/addons/                @paulyapsl @yqyeoh
 /.github/                       @paulyapsl @yqyeoh
 /.checkov.yaml                  @paulyapsl @kealeee
-/modules/observability/         @yqyeoh @paulyapsl
+/modules/observability/         @kealeee @paulyapsl
 /deploy/helm/observability/     @paulyapsl @kealeee
 /docs/                          @kealeee
 /modules/audit/                 @kealeee
