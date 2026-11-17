@@ -23,6 +23,7 @@ access until someone noticed.
 | `g4-merlion-ci-prod-plan` | infra repo, `main`, no environment | read-only plan of prod |
 | `g4-merlion-ci-staging` | infra repo, `staging` Environment | change staging only |
 | `g4-merlion-ci-prod` | infra repo, `production` Environment (after a reviewer approves) | change prod only |
+| `g4-merlion-ci-record` | infra repo, `main`, no environment | add deploy records to the audit bucket (APP-11) |
 
 - **Exact subject, no wildcards.** Each trust policy matches the token's `sub` claim exactly, in
   GitHub's immutable format `repo:<org>@<org id>/<repo>@<repo id>:<context>`. The numeric IDs mean a

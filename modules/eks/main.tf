@@ -13,6 +13,12 @@ resource "aws_cloudwatch_log_group" "cluster" {
   name              = "/aws/eks/${var.name}/cluster"
   retention_in_days = var.cluster_log_retention_days
   kms_key_id        = var.logs_kms_key_arn
+
+  # Prod: a teardown leaves the group (and its year of control-plane logs) in place, and the pipeline
+  # can't delete it (DenyEksLogTampering in modules/iam-ci). A rebuild must import the leftover group
+  # first (import_eks_log_group in envs/prod). Staging's group is deleted with staging by the teardown
+  # workflow; the copy that has to last a year is the one in the Object Lock bucket (audit_export).
+  skip_destroy = var.protect_log_group
 }
 
 resource "aws_eks_cluster" "this" {

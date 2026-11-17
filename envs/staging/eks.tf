@@ -22,11 +22,24 @@ module "eks" {
 
   logs_kms_key_arn = module.logs_key.arn
 
+  # Kubernetes audit log copied to the Object Lock audit bucket, where nobody can delete it (HC-3).
+  # Bucket and key are created by bootstrap (modules/audit).
+  audit_export = {
+    bucket_arn  = "arn:aws:s3:::${var.team}-merlion-audit-${var.account_id}"
+    kms_key_arn = data.aws_kms_alias.audit.target_key_arn
+  }
+
   # Created by bootstrap; every role this pipeline creates must carry it
   permissions_boundary_arn = "arn:aws:iam::${var.account_id}:policy/${local.name}-workload-boundary"
 
   admin_principal_arns = [
     "arn:aws:iam::${var.account_id}:role/${var.team}-merlion-ci-staging", # the staging pipeline
-    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh",           # SRE, kubectl access
+    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh",           # DevSecOps, kubectl access
+    "arn:aws:iam::${var.account_id}:user/students/ce13/paulyapsl",        # SRE, kubectl access
   ]
+}
+
+# The audit key, by its alias (bootstrap, modules/audit)
+data "aws_kms_alias" "audit" {
+  name = "alias/${var.team}-merlion-audit"
 }

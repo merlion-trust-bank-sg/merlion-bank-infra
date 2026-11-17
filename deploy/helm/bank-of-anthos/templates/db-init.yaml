@@ -1,12 +1,22 @@
 # Schema and demo data for the two RDS databases. Upstream ships them as Postgres images that load
 # /docker-entrypoint-initdb.d/ when they create an empty local database; here the same scripts run
-# once against RDS with psql. Each step is skipped if its table already exists, so a re-sync never
-# loads the demo data twice.
+# once against RDS with psql.
+#
+# Run once, and never twice over a half-loaded database. Upstream's scripts aren't safe to re-run
+# (ledger's CREATE TABLE fails; accounts' contacts would be duplicated), so the Job records its
+# progress in a db_init table: "started" before the scripts, "done" after. Done: nothing to do.
+# Started but not done (an earlier run was interrupted halfway): it stops with an error instead of
+# guessing, and someone drops the half-loaded tables (and db_init) before the next sync.
 #
 # Sync waves set the order: wave 0 the config and the ExternalSecrets (and the Secrets they create),
 # wave 1 these Jobs, wave 2 the services. Argo CD waits for each wave to be healthy before the next,
 # so a Job only starts once its database Secret exists, and the services only once the Job is done.
-# Not a PreSync hook: hooks run before every other resource, including the Secrets they need.
+#
+# Sync hooks, not plain resources: a Job's pod template can't be changed once created, so a new init
+# image would fail to patch and block the whole sync. Argo CD deletes the previous Job and creates a
+# new one on each sync instead (BeforeHookCreation keeps the last one for its logs until then). A
+# Sync hook still runs in wave order with the other resources; a PreSync hook would run before the
+# Secrets it needs. Argo CD runs one sync at a time, so a running Job is never deleted by the next.
 {{- range $key, $db := .Values.databases }}
 {{- $init := index $.Values.dbInit $key }}
 apiVersion: batch/v1
@@ -17,10 +27,11 @@ metadata:
     app: {{ $key }}-db-init
     {{- include "boa.labels" $ | nindent 4 }}
   annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 4
-  ttlSecondsAfterFinished: 600
   template:
     metadata:
       labels:
@@ -39,11 +50,28 @@ spec:
               set -euo pipefail
               # The init scripts call psql with --username/--dbname and no host: PGHOST etc. point it at RDS
               until pg_isready -q; do echo "waiting for {{ $key }} database"; sleep 5; done
+              q() { psql -X -v ON_ERROR_STOP=1 -tAc "$1"; }
               table={{ ternary "users" "transactions" (eq $key "accounts") }}
-              if [ "$(psql -tAc "select to_regclass('public.$table') is not null")" = "t" ]; then
-                echo "{{ $key }}: schema already loaded, nothing to do"
+              q "create table if not exists db_init (step text primary key, at timestamptz not null default now())"
+              finished="$(q "select count(*) from db_init where step = 'done'")"
+              started="$(q "select count(*) from db_init where step = 'started'")"
+              loaded="$(q "select to_regclass('public.$table') is not null")"
+              if [ "$finished" = 1 ]; then
+                echo "{{ $key }}: already initialised, nothing to do"
                 exit 0
               fi
+              if [ "$loaded" = t ]; then
+                if [ "$started" = 1 ]; then
+                  echo "{{ $key }}: an earlier run stopped halfway; the data may be incomplete." >&2
+                  echo "Drop its tables and db_init, then sync again (see the comment in db-init.yaml)." >&2
+                  exit 1
+                fi
+                # Loaded before these markers existed (by a run that finished)
+                q "insert into db_init (step) values ('done')"
+                echo "{{ $key }}: loaded earlier, marked as done"
+                exit 0
+              fi
+              q "insert into db_init (step) values ('started') on conflict do nothing"
               for f in /docker-entrypoint-initdb.d/*; do
                 echo "{{ $key }}: running $(basename "$f")"
                 case "$f" in
@@ -51,6 +79,8 @@ spec:
                   *.sh)  bash "$f" ;;
                 esac
               done
+              q "insert into db_init (step) values ('done')"
+              echo "{{ $key }}: initialised"
           envFrom:
             - configMapRef:
                 name: environment-config

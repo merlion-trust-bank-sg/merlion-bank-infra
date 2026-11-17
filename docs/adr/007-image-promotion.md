@@ -1,9 +1,10 @@
 # ADR-007: Image promotion – build once, promote the same digest through Git
 
-- **Status:** Accepted (revised 2026-11-15: staging promotions need an approval; images are signed)
+- **Status:** Accepted (revised 2026-11-15: staging promotions need an approval; images are signed.
+  Revised 2026-11-16: Argo CD reads the repo with a read-only GitHub App and manages itself)
 - **Date:** 2026-11-13
 - **Deciders:** DevSecOps, reviewed by Solutions Architect and SRE
-- **Related:** FR-4, HC-2 (`docs/requirements.md`); ADR-005 (credentials); APP-10, APP-11; `merlion-bank-app` `cd.yml`, `.github/scripts/open-promotion-pr.sh`; `.github/workflows/promotion.yml`; `deploy/values-<env>.yaml`
+- **Related:** FR-4, HC-2 (`docs/requirements.md`); ADR-005 (credentials); APP-10, APP-11; `merlion-bank-app` `cd.yml`, `.github/scripts/open-promotion-pr.sh`; `.github/workflows/promotion.yml`; `deploy/values-<env>.yaml`; `deploy/bootstrap/` (`bootstrap.sh`, `repo-creds.yaml`, `put-argocd-github-app.sh`)
 
 ## Context
 Changes must reach production only through an automated pipeline with an approval step (FR-4),
@@ -47,8 +48,29 @@ know an image being promoted is one our pipeline built.
     `deploy/values-prod.yaml`, each equal to the digest staging runs on `main` and signed by cd.
 
   So a reviewer only decides *whether* to deploy this version; the checks guarantee *what* it is.
+- **Rollback is a revert of the promotion PR**, approved like any PR (runbook:
+  `docs/runbooks/rollback.md`). A person's PR that changes `deploy/values-<env>.yaml` is also
+  checked by that environment's promotion check (`check-promotion.py --manual`): every digest it adds
+  must be one the environment ran before (in the file's history on `main`), or pass the promotion
+  rules (signed by cd; for prod, also what staging runs). A revert passes; a hand-edited "rollback" to
+  any other image fails, so the reviewer isn't the only safeguard. Digests that ran there before
+  aren't re-verified: they were checked when they first got there, and this keeps rollback possible
+  to images built before signing.
 - **Deploy records** (APP-11): each merged promotion and each apply is written to the Object Lock
   audit bucket.
+- **Argo CD reads the repo as if it were private**, with the read-only GitHub App `merlion-argocd`
+  (Contents: read, this repo only; one key per environment). A bank's deploy repo would be private,
+  and its CD tool would need read credentials that never pass through the pipeline or Git; we build
+  and demonstrate exactly that, so making the repo private is a single setting. The repo itself
+  stays public because GitHub Free enforces rulesets and environment required reviewers only on
+  public repos. GitHub rejects a bad key on a public repo too, so the credentials are really used.
+  - The key is stored in Secrets Manager by an org owner (`put-argocd-github-app.sh`, outside
+    Terraform so it survives a teardown) and copied into the `argocd` namespace by External Secrets
+    as a `repo-creds` Secret. The pipeline never reads it (`DenyReadingSecrets`).
+  - Argo CD can't install the tool that delivers its own repo credentials, so `bootstrap.sh`
+    installs External Secrets first, then the credentials, then Argo CD. Both charts are installed
+    only on a new cluster; Argo CD then manages them, and itself, from `deploy/platform/<env>/`, so
+    an Argo CD change is a reviewed PR like any other.
 
 ## Alternatives considered
 | Option | Why not chosen |
@@ -61,6 +83,9 @@ know an image being promoted is one our pipeline built.
 | A separate prod registry, images copied there on promotion | Strong where each environment has its own account; in our one account an admin reaches both registries anyway. Signed provenance gives the "prod only runs what our pipeline built" guarantee without a second registry |
 | Commit-tag check (a digest must carry a commit-SHA tag in ECR) | An admin can push an image with any tag. Signatures can't be forged that way, and need no AWS access in the check |
 | `GITHUB_TOKEN` instead of an App | Can't open PRs in another repo, and PRs it opens don't trigger workflows, so the required checks would never run |
+| Argo CD reads the public repo without credentials | Works today, but isn't what a bank's private repo needs, and would leave the setup untested until the repo went private |
+| SSH deploy key for Argo CD | Long-lived, tied to one repo, no expiry; a GitHub App issues hour-long tokens and can be limited to read-only |
+| Making the repo private | GitHub Free would stop enforcing the `main` ruleset and the `production` approval, which are our maker-checker controls |
 
 ## Consequences
 **Positive**
@@ -70,7 +95,8 @@ know an image being promoted is one our pipeline built.
   Argo CD sync history and the deploy record back it up.
 - One ruleset, no bypass list: the same rule for people, pipelines and the App.
 - The app repo never has cluster or Terraform credentials; the App can only open PRs.
-- Rollback is a Git revert; the previous image is still in ECR.
+- Rollback is a Git revert; the previous image is still in ECR, and the check limits a rollback to
+  images the environment already ran.
 
 **Negative / risks**
 - **Staging isn't continuous deployment:** a release reaches staging when a teammate approves the
@@ -81,10 +107,23 @@ know an image being promoted is one our pipeline built.
   (Kyverno / Sigstore policy controller) is future work.
 - A GitHub App private key exists. Mitigation: Environment secret for `main` only, App installed on
   one repo, rotation documented, and the App can't merge.
+- **Argo CD's GitHub App key** must be created, stored and rotated by an org owner. It's read-only on
+  one repo and revocable on the App page in one click. `bootstrap.sh` stops if it's missing, so a new
+  environment needs it stored before its first bootstrap.
+- **Accepted risk: one External Secrets role for every namespace.** Both SecretStores (`bank`,
+  `argocd`) use the controller's own role, which can read every listed secret: the RDS passwords,
+  the JWT key, the alerting credentials and Argo CD's key. So an ExternalSecret in any namespace could
+  copy any of them. Accepted because only Argo CD creates such resources, from reviewed PRs on `main`,
+  and people are read-only in prod; External Secrets' reads are in CloudTrail's 90-day event history.
+  Future work: one IAM role per SecretStore, plus limits on which namespaces may create SecretStores
+  (ClusterSecretStores with namespace conditions, or a policy engine).
 - Images built before signing was added have no provenance; promotions only verify the digests they
   set, so they don't block, but those images can't be promoted to prod.
 - A promotion waits on `plan staging`, so it can't be approved while the CI roles are broken (for
-  example after the nightly cleanup).
+  example after the nightly cleanup). The same applies to a rollback PR.
+- **A rollback needs a teammate's approval**, so it's slower than Argo CD's rollback button (which
+  self-heal would undo anyway). It doesn't roll back data: a release that changes the database schema
+  needs a backward-compatible migration.
 
 ## Evidence
 - `merlion-bank-app` `cd.yml` (`promote to staging` job, attestations) and a merged
@@ -93,3 +132,8 @@ know an image being promoted is one our pipeline built.
 - `.github/workflows/promotion.yml`, `.github/scripts/check-promotion.py`; a promotion PR failing the
   check (unsigned digest, or a change outside the digests); the ruleset screenshot (no bypass list).
 - `deploy/values-staging.yaml` and `deploy/values-prod.yaml` history.
+- A revert PR of a promotion passing its promotion check, and a hand-edited `values-prod.yaml`
+  with an unknown digest failing it.
+- Argo CD with a bogus GitHub App key failing to read the repo (`401 Unauthorized` from
+  `api.github.com/app/installations/…/access_tokens`), and recovering with the real key.
+- `kubectl -n argocd get applications argocd external-secrets`: Argo CD managing itself.
