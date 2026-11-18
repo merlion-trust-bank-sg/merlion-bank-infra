@@ -1,4 +1,5 @@
-# YACE: the ALB's CloudWatch metrics in Prometheus, for the availability and latency SLOs (APP-14).
+# YACE: CloudWatch metrics in Prometheus: the ALB's for the availability and latency SLOs (APP-14), RDS
+# connections for "database unreachable", and the audit log's Firehose delivery (INF-17).
 # AWS access through the read-only Pod Identity role on service account "yace" (modules/observability).
 # ALBs are found by the elbv2.k8s.aws/cluster tag the LB Controller puts on them.
 apiVersion: argoproj.io/v1alpha1
@@ -69,6 +70,40 @@ spec:
                         nilToZero: true
                       - name: TargetResponseTime
                         statistics: [p95]
+                  # The bank's two databases: no open connections from the app = database unreachable
+                  # (INF-17). Team AND Environment tags, because the training account is shared.
+                  - type: AWS/RDS
+                    regions:
+                      - {{index .metadata.annotations "region"}}
+                    searchTags:
+                      - key: Team
+                        value: ^g4$
+                      - key: Environment
+                        value: ^{{index .metadata.labels "environment"}}$
+                    period: 60
+                    length: 300
+                    nilToZero: true
+                    metrics:
+                      - name: DatabaseConnections
+                        statistics: [Average]
+                  # The Kubernetes audit log's copy to the Object Lock bucket (HC-3, #40): records in,
+                  # and whether delivery to S3 succeeds. A silent gap would break audit retention.
+                  - type: AWS/Firehose
+                    regions:
+                      - {{index .metadata.annotations "region"}}
+                    searchTags:
+                      - key: Team
+                        value: ^g4$
+                      - key: Environment
+                        value: ^{{index .metadata.labels "environment"}}$
+                    period: 300
+                    length: 900
+                    nilToZero: true
+                    metrics:
+                      - name: IncomingRecords
+                        statistics: [Sum]
+                      - name: DeliveryToS3.Success
+                        statistics: [Average]
       destination:
         server: '{{.server}}'
         namespace: monitoring

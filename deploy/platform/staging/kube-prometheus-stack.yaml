@@ -153,6 +153,9 @@ spec:
               grafana.ini:
                 server:
                   root_url: 'https://grafana.{{index .metadata.annotations "app_hostname"}}'
+                # The health dashboard (deploy/helm/observability) is what people see after logging in
+                dashboards:
+                  default_home_dashboard_path: /tmp/dashboards/bank-health.json
               # Read-only login for assessors and other non-team viewers (INF-17). Grafana keeps no
               # storage here, so a user added by hand would vanish on every restart; this sidecar creates
               # the Viewer user (or resets its password) each time the pod starts. Credentials come

@@ -1,0 +1,148 @@
+# SLIs are measured at the ALB, where the customer's request arrives (ops/slo/slo.md in merlion-bank-app).
+# YACE copies the ALB's CloudWatch metrics into Prometheus once a minute; each sample is the count for
+# one minute. The tag selects the bank's ALB only, not Grafana's.
+groups:
+  - name: bank-sli
+    interval: 1m
+    rules:
+      - record: bank:alb_requests:count1m
+        expr: sum(aws_applicationelb_request_count_sum{tag_ingress_k8s_aws_stack="bank/frontend"})
+
+      # Errors the customer sees: 5xx from the pods, plus 5xx the ALB returns itself when no pod is healthy
+      - record: bank:alb_errors:count1m
+        expr: |
+          (sum(aws_applicationelb_httpcode_target_5_xx_count_sum{tag_ingress_k8s_aws_stack="bank/frontend"}) or vector(0))
+          +
+          (sum(aws_applicationelb_httpcode_elb_5_xx_count_sum{tag_ingress_k8s_aws_stack="bank/frontend"}) or vector(0))
+
+      - record: bank:error_ratio:5m
+        expr: sum_over_time(bank:alb_errors:count1m[5m]) / sum_over_time(bank:alb_requests:count1m[5m])
+      - record: bank:error_ratio:30m
+        expr: sum_over_time(bank:alb_errors:count1m[30m]) / sum_over_time(bank:alb_requests:count1m[30m])
+      - record: bank:error_ratio:1h
+        expr: sum_over_time(bank:alb_errors:count1m[1h]) / sum_over_time(bank:alb_requests:count1m[1h])
+      - record: bank:error_ratio:6h
+        expr: sum_over_time(bank:alb_errors:count1m[6h]) / sum_over_time(bank:alb_requests:count1m[6h])
+
+      - record: bank:latency_p95:seconds
+        expr: max(aws_applicationelb_target_response_time_p95{tag_ingress_k8s_aws_stack="bank/frontend"})
+
+  - name: bank-slo-alerts
+    rules:
+      # SLO 1: 99.9% availability, so the error budget is 0.1% (0.001).
+      # Fast burn: 14.4x the budget rate over 1 h (2% of a 30-day budget gone in an hour). The 5 m
+      # window makes the alert stop soon after the errors stop.
+      - alert: BankAvailabilityFastBurn
+        expr: bank:error_ratio:1h > (14.4 * 0.001) and bank:error_ratio:5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: Bank availability SLO is burning fast
+          description: >-
+            {{ $value | humanizePercentage }} of requests at the load balancer failed in the last hour
+            (SLO: 99.9% succeed). At this rate the 30-day error budget is gone in about two days.
+          runbook_url: https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/runbooks/bank-service-down.md
+
+      # Slow burn: 6x over 6 h (5% of the budget). A ticket, not a page.
+      - alert: BankAvailabilitySlowBurn
+        expr: bank:error_ratio:6h > (6 * 0.001) and bank:error_ratio:30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          slo: availability
+        annotations:
+          summary: Bank availability SLO is burning slowly
+          description: >-
+            {{ $value | humanizePercentage }} of requests failed over the last 6 hours (SLO: 99.9% succeed).
+          runbook_url: https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/runbooks/bank-service-down.md
+
+      # SLO 2: p95 latency under 500 ms
+      - alert: BankLatencyP95High
+        expr: bank:latency_p95:seconds > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: Bank p95 response time is above 500 ms
+          description: >-
+            p95 response time at the load balancer has been {{ $value | humanizeDuration }} for 10 minutes (SLO: under 500 ms).
+          runbook_url: https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/runbooks/bank-service-down.md
+
+  - name: bank-failure-modes
+    rules:
+      # Works with no customer traffic at all, so it's the alert to trigger live
+      - alert: BankServiceDown
+        expr: kube_deployment_status_replicas_available{namespace="bank", deployment!="loadgenerator"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.deployment }} has no running pods"
+          description: >-
+            Deployment {{ $labels.deployment }} in namespace bank has had 0 available replicas for 2 minutes.
+          runbook_url: https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/runbooks/bank-service-down.md
+
+      - alert: BankPodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total{namespace="bank"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.pod }} keeps restarting"
+          description: >-
+            Container {{ $labels.container }} in pod {{ $labels.pod }} restarted more than 3 times in 15 minutes.
+          runbook_url: https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/runbooks/bank-service-down.md
+
+      # The SLO alerts are blind without these series: YACE down, its role broken, or the ALB gone
+      - alert: BankSliMissing
+        expr: absent(aws_applicationelb_httpcode_target_5_xx_count_sum{tag_ingress_k8s_aws_stack="bank/frontend"})
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: No load balancer metrics for the bank
+          description: >-
+            Prometheus has had no ALB metrics from YACE for 15 minutes, so the SLO alerts can't fire.
+
+      # No connections from the app to a bank database for 5 minutes. The services keep connection
+      # pools open, so 0 means the database is down, stopped or unreachable (INF-17).
+      - alert: BankDatabaseUnreachable
+        expr: max by (dimension_DBInstanceIdentifier) (aws_rds_database_connections_average{dimension_DBInstanceIdentifier=~".+-(accounts|ledger)-db"}) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.dimension_DBInstanceIdentifier }} has no connections"
+          description: >-
+            No bank service has had a connection open to {{ $labels.dimension_DBInstanceIdentifier }}
+            for 5 minutes (RDS DatabaseConnections). The database may be stopped, failing over or unreachable.
+          runbook_url: https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/runbooks/bank-service-down.md
+
+  - name: bank-audit-export
+    rules:
+      # The Kubernetes audit log goes to the Object Lock bucket through Firehose (HC-3). The control
+      # plane logs API calls all the time, so no records for 30 minutes means the export has stopped.
+      - alert: AuditExportStalled
+        expr: sum by (dimension_DeliveryStreamName) (sum_over_time(aws_firehose_incoming_records_sum{dimension_DeliveryStreamName=~".+-eks-audit"}[30m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Kubernetes audit log is not reaching Firehose
+          description: >-
+            {{ $labels.dimension_DeliveryStreamName }} has received no records for 30 minutes. Check the
+            subscription filter on the EKS log group. Audit events are still in CloudWatch (365 days).
+
+      - alert: AuditExportDeliveryFailing
+        expr: min by (dimension_DeliveryStreamName) (aws_firehose_delivery_to_s3_success_average{dimension_DeliveryStreamName=~".+-eks-audit"}) < 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Kubernetes audit log copies to S3 are failing
+          description: >-
+            {{ $labels.dimension_DeliveryStreamName }} is failing to deliver to the Object Lock audit bucket.
+            Failed records go to the stream's errors/ prefix; check the Firehose role and the audit KMS key.

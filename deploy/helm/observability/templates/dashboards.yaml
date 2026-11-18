@@ -1,0 +1,11 @@
+# Dashboards as code (INF-17): Grafana's sidecar loads every ConfigMap labelled grafana_dashboard.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-bank-health
+  labels:
+    grafana_dashboard: "1"
+    {{- include "obs.labels" . | nindent 4 }}
+data:
+  bank-health.json: |-
+{{ .Files.Get "dashboards/bank-health.json" | indent 4 }}

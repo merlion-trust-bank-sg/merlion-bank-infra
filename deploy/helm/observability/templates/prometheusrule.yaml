@@ -1,0 +1,10 @@
+# SLO recording rules and alerts (INF-17, APP-14). The rules themselves are plain Prometheus rule
+# files in rules/, loaded as-is, so their {{ $labels }} templates don't clash with Helm's.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: bank-slo
+  labels:
+    {{- include "obs.labels" . | nindent 4 }}
+spec:
+{{ .Files.Get "rules/bank-slo.rules.yaml" | indent 2 }}
