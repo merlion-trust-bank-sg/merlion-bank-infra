@@ -1,5 +1,6 @@
 # Prometheus, Grafana, Alertmanager, node-exporter and kube-state-metrics (ADR-003, INF-15).
-# Alert routing to email / Telegram comes in INF-16; dashboards and SLO rules in INF-17.
+# Alert routing to Telegram / email is in the alertmanager block (INF-16); the SLO rules and the dashboard
+# are in deploy/helm/observability (INF-17).
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -57,16 +58,142 @@ spec:
                         requests:
                           storage: 20Gi
             alertmanager:
+              # Routing (INF-16). No message templates here: this file is an Argo CD Go template, and
+              # Alertmanager's default Telegram and email texts carry only alert names, labels and the
+              # annotations we wrote in the rules, so no customer data.
+              config:
+                global:
+                  resolve_timeout: 5m
+                  # Email is optional. To use it: fill in the three smtp_* values, and uncomment
+                  # email_configs below. The password is a file from Secrets Manager, never a value here.
+                  # smtp_smarthost: smtp.gmail.com:587
+                  # smtp_from: <team mailbox>
+                  # smtp_auth_username: <team mailbox>
+                  # smtp_auth_password_file: /etc/alertmanager/secrets/alertmanager-notify/smtp-password
+                # The chart's default inhibit rules (kube-prometheus-stack 93.1.1). Setting `config` replaces
+                # the chart's whole config, so they are restated here: a critical alert silences the
+                # warning/info alerts of the same name and namespace, and info alerts stay quiet unless
+                # something else is wrong in that namespace.
+                inhibit_rules:
+                  - source_matchers: ['severity = critical']
+                    target_matchers: ['severity =~ warning|info']
+                    equal: [namespace, alertname]
+                  - source_matchers: ['severity = warning']
+                    target_matchers: ['severity = info']
+                    equal: [namespace, alertname]
+                  - source_matchers: ['alertname = InfoInhibitor']
+                    target_matchers: ['severity = info']
+                    equal: [namespace]
+                  - target_matchers: ['alertname = InfoInhibitor']
+                route:
+                  receiver: team
+                  group_by: [alertname, namespace]
+                  group_wait: 30s
+                  group_interval: 5m
+                  repeat_interval: 4h
+                  routes:
+                    # Dead man's switch: Watchdog always fires, so one message every 12 hours proves
+                    # Prometheus -> Alertmanager -> Telegram works. No message = monitoring is down.
+                    - receiver: heartbeat
+                      matchers: ['alertname = "Watchdog"']
+                      group_wait: 0s
+                      repeat_interval: 12h
+                    - receiver: "null"
+                      matchers: ['alertname = "InfoInhibitor"']
+                receivers:
+                  - name: "null"
+                  - name: team
+                    telegram_configs:
+                      - bot_token_file: /etc/alertmanager/secrets/alertmanager-notify/telegram-bot-token
+                        chat_id: -7684609646 # REPLACE: the team alert group's chat ID (not a secret)
+                        send_resolved: true
+                    # email_configs:
+                    #   - to: <team mailbox>
+                    #     send_resolved: true
+                  - name: heartbeat
+                    telegram_configs:
+                      - bot_token_file: /etc/alertmanager/secrets/alertmanager-notify/telegram-bot-token
+                        chat_id: -7684609646 # REPLACE: same chat
+                        send_resolved: false
               alertmanagerSpec:
+                # Kubernetes Secret from External Secrets (deploy/helm/observability), mounted at
+                # /etc/alertmanager/secrets/alertmanager-notify/
+                secrets:
+                  - alertmanager-notify
                 resources:
                   requests:
                     cpu: 20m
                     memory: 64Mi
             grafana:
               # Dashboards come from code (INF-17), so nothing needs to persist in Grafana itself.
-              # Reached with kubectl port-forward until it gets an ALB with TLS and login.
               persistence:
                 enabled: false
+              # Admin login from Secrets Manager (External Secrets, deploy/helm/observability)
+              admin:
+                existingSecret: grafana-admin
+                userKey: admin-user
+                passwordKey: admin-password
+              # https://grafana.<app hostname>: its own ALB with the env's certificate (which lists this
+              # name, envs/<env>/dns.tf). Login required; anonymous access stays off because logs can
+              # hold customer data.
+              ingress:
+                enabled: true
+                ingressClassName: alb
+                hosts:
+                  - 'grafana.{{index .metadata.annotations "app_hostname"}}'
+                path: /
+                annotations:
+                  alb.ingress.kubernetes.io/scheme: internet-facing
+                  alb.ingress.kubernetes.io/target-type: ip
+                  alb.ingress.kubernetes.io/healthcheck-path: /api/health
+                  alb.ingress.kubernetes.io/certificate-arn: '{{index .metadata.annotations "certificate_arn"}}'
+                  alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+                  alb.ingress.kubernetes.io/ssl-redirect: "443"
+                  alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+              grafana.ini:
+                server:
+                  root_url: 'https://grafana.{{index .metadata.annotations "app_hostname"}}'
+              # Read-only login for assessors and other non-team viewers (INF-17). Grafana keeps no
+              # storage here, so a user added by hand would vanish on every restart; this sidecar creates
+              # the Viewer user (or resets its password) each time the pod starts. Credentials come
+              # from Secrets Manager through External Secrets (Secret grafana-admin).
+              extraContainers: |
+                - name: viewer-user
+                  image: curlimages/curl:8.11.1
+                  env:
+                    - name: ADMIN_USER
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: admin-user } }
+                    - name: ADMIN_PASSWORD
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: admin-password } }
+                    - name: VIEWER_USER
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: viewer-user } }
+                    - name: VIEWER_PASSWORD
+                      valueFrom: { secretKeyRef: { name: grafana-admin, key: viewer-password } }
+                  command: ["/bin/sh", "-c"]
+                  args:
+                    - |
+                      api=http://localhost:3000/api
+                      until curl -sf "$api/health" >/dev/null; do sleep 5; done
+                      code=$(curl -s -o /dev/null -w '%{http_code}' -u "$ADMIN_USER:$ADMIN_PASSWORD" \
+                        -H 'Content-Type: application/json' -X POST "$api/admin/users" \
+                        -d "{\"name\":\"Viewer\",\"login\":\"$VIEWER_USER\",\"password\":\"$VIEWER_PASSWORD\"}")
+                      if [ "$code" = 412 ]; then
+                        id=$(curl -s -u "$ADMIN_USER:$ADMIN_PASSWORD" "$api/users/lookup?loginOrEmail=$VIEWER_USER" \
+                          | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
+                        code=$(curl -s -o /dev/null -w '%{http_code}' -u "$ADMIN_USER:$ADMIN_PASSWORD" \
+                          -H 'Content-Type: application/json' -X PUT "$api/admin/users/$id/password" \
+                          -d "{\"password\":\"$VIEWER_PASSWORD\"}")
+                      fi
+                      echo "viewer user $VIEWER_USER: HTTP $code"
+                      while true; do sleep 3600; done
+                  resources:
+                    requests: { cpu: 5m, memory: 16Mi }
+                    limits: { memory: 32Mi }
+                  securityContext:
+                    runAsNonRoot: true
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: true
+                    capabilities: { drop: [ALL] }
               # Helm test pods aren't used with Argo CD
               testFramework:
                 enabled: false

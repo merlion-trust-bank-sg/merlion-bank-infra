@@ -19,10 +19,14 @@ NAME="g4-merlion-$ENV/monitoring/alerting"
 read -rsp "Telegram bot token: " TELEGRAM_BOT_TOKEN; echo
 read -rsp "SMTP app password (Enter to skip email): " SMTP_PASSWORD; echo
 GRAFANA_ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=')"
+GRAFANA_VIEWER_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=')"
 
 VALUE="$(jq -n \
-  --arg t "$TELEGRAM_BOT_TOKEN" --arg s "${SMTP_PASSWORD:-unused}" --arg g "$GRAFANA_ADMIN_PASSWORD" \
-  '{telegram_bot_token: $t, smtp_password: $s, grafana_admin_user: "admin", grafana_admin_password: $g}')"
+  --arg t "$TELEGRAM_BOT_TOKEN" --arg s "${SMTP_PASSWORD:-unused}" \
+  --arg g "$GRAFANA_ADMIN_PASSWORD" --arg v "$GRAFANA_VIEWER_PASSWORD" \
+  '{telegram_bot_token: $t, smtp_password: $s,
+    grafana_admin_user: "admin", grafana_admin_password: $g,
+    grafana_viewer_user: "viewer", grafana_viewer_password: $v}')"
 
 if aws secretsmanager describe-secret --region "$REGION" --secret-id "$NAME" >/dev/null 2>&1; then
   aws secretsmanager put-secret-value --region "$REGION" --secret-id "$NAME" --secret-string "$VALUE" >/dev/null
@@ -40,3 +44,5 @@ else
 fi
 echo "Grafana admin password: read it with"
 echo "  aws secretsmanager get-secret-value --region $REGION --secret-id $NAME --query SecretString --output text | jq -r .grafana_admin_password"
+echo "Grafana viewer login (user: viewer), for assessors: read the password with"
+echo "  aws secretsmanager get-secret-value --region $REGION --secret-id $NAME --query SecretString --output text | jq -r .grafana_viewer_password"
