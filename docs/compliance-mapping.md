@@ -48,7 +48,7 @@ met in `us-east-1`.
 | Control | Where | Evidence | Status |
 |---|---|---|---|
 | Only the prod pipeline can change prod | `g4-merlion-ci-prod` trusts only the `production` environment (`modules/iam-ci/trust.tf`); env fence and permissions boundary keep staging's role out of prod | Trust policy; IAM simulator: staging role on a prod resource → deny | ✅ |
-| People are read-only in the prod cluster | `admin_principal_arns` = the prod pipeline only; people in `viewer_principal_arns` (`envs/prod/eks.tf`) | `aws eks list-access-entries` | ✅ (temporary admins for testing discussed in #44) |
+| People are read-only in the prod cluster | `admin_principal_arns` = the prod pipeline, plus one named break-glass holder (DevSecOps) for emergency restarts and restores; other people in `viewer_principal_arns` (`envs/prod/eks.tf`). Break-glass actions are in the EKS audit log (Object Lock); restores write a record to `deploys/prod/` (`scripts/restore-iam.sh prod`) | `aws eks list-access-entries`; a viewer's `kubectl` change refused (Forbidden) | ✅ |
 | A console change is noticed | EventBridge rule on console write calls by the team's IAM users → SNS email (`modules/console-alert`, INF-11) | One console change and the alert email it produced | ✅ applied; email subscription to confirm |
 | Infrastructure only through Terraform | All AWS resources in Terraform; `bootstrap/` applied by an admin, everything else by the pipeline | `terraform plan` shows no drift | ✅ |
 
