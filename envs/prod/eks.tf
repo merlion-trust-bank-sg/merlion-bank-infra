@@ -37,13 +37,19 @@ module "eks" {
   # Created by bootstrap; every role this pipeline creates must carry it
   permissions_boundary_arn = "arn:aws:iam::${var.account_id}:policy/${local.name}-workload-boundary"
 
-  # Only the prod pipeline may change the cluster. People get read-only access: prod changes go
-  # through a reviewed PR and the approved pipeline, never kubectl (HC-2).
+  # Only the prod pipeline changes the cluster: prod changes go through a reviewed PR and the approved
+  # pipeline (HC-2). People are read-only, except one named break-glass holder (DevSecOps) for
+  # emergency restarts and restores: the training account strips the pipeline's own roles every
+  # night, so the pipeline can't restore prod itself. Every kubectl action is in the EKS audit log
+  # (exported to the Object Lock bucket), each restore writes a record to deploys/prod/
+  # (scripts/restore-iam.sh), and Argo CD self-heal reverts manual changes to what's in Git.
   admin_principal_arns = [
     "arn:aws:iam::${var.account_id}:role/${var.team}-merlion-ci-prod",
+    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh", # break-glass holder
   ]
   viewer_principal_arns = [
-    "arn:aws:iam::${var.account_id}:user/students/ce13/yqyeoh", # SRE / DevSecOps
+    "arn:aws:iam::${var.account_id}:user/students/ce13/paulyapsl", # SRE: demo and incident runbook
+    "arn:aws:iam::${var.account_id}:user/students/ce13/kealeee",   # SA: evidence
   ]
 }
 

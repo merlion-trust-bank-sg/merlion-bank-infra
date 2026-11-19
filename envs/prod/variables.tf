@@ -29,11 +29,14 @@ variable "enabled" {
   description = <<-EOT
     Whether prod exists. false = torn down: no resources, no cost, and plan prod shows no changes on
     every merge. Changed only in a reviewed PR; the apply then needs a production approval, so
-    bringing prod up and tearing it down are both approved changes. To tear down, also set
-    deletion_protection = false in rds.tf in the same PR (each database keeps a dated final snapshot).
+    bringing prod up and tearing it down are both approved changes. Tearing down takes two PRs, each
+    applied: first deletion_protection = false in rds.tf, then enabled = false (and
+    import_eks_log_group = false). In one PR the destroy fails: the databases are removed from the
+    config, so the destroy still sees deletion_protection = true from state. Each database keeps a
+    final snapshot.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "import_eks_log_group" {
