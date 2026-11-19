@@ -81,6 +81,31 @@ and `s3:DeleteObjectVersion` to everyone, so they outlive environment teardowns.
 To receive console-write alerts (below), set an address when applying bootstrap and accept the
 confirmation email AWS sends: `export TF_VAR_alert_email=<address>`.
 
+## Restoring after the training account's nightly cleanup
+
+The training account's nightly cleanup keeps resources tagged with our `Project` value, but still
+strips every role's inline policies and policy attachments, the rules of the EKS-created cluster
+security group, and the node group's Auto Scaling group. The roles can be assumed but do nothing: CI
+fails with 403 on the state bucket, nodes can't join, the add-ons lose AWS access. The pipeline can't
+fix this itself, because the roles it signs in with are among those stripped.
+
+| Situation | Who | Command (an admin, your own profile for account 255945442255) |
+|---|---|---|
+| Roles stripped; staging degraded | Any admin | `scripts/restore-iam.sh` |
+| Roles stripped; prod degraded | **Break-glass holder only** (yqyeoh, cluster admin in prod) | `scripts/restore-iam.sh prod` |
+| State bucket gone (the cleanup took more than IAM) | Any admin | `scripts/rebuild-bootstrap.sh` |
+
+`restore-iam.sh` plans from an up-to-date `main` only. It applies on its own only if the plan just
+recreates the stripped policies; anything else waits for a `y`. It also puts back the cluster
+security group's rules and replaces a node group whose Auto Scaling group is gone, then refreshes
+the Kubernetes Secrets and restarts the bank.
+
+**Prod is break-glass:** prod changes normally go only through the approved pipeline. A prod
+restore asks for a reason, refuses anyone but the break-glass holder, and writes a record (reason,
+who, when, commit, what was applied) to `s3://g4-merlion-audit-255945442255/deploys/prod/`, next to
+the pipeline's deploy records, where nobody can change or delete it. Afterwards, re-run any CI job
+that failed with 403.
+
 ## Argo CD's GitHub credentials (once, by an org owner)
 
 **Before the first merge that includes this, and before a new environment's first bootstrap:** the
@@ -135,7 +160,8 @@ IAM are recorded.
 ## Pipeline
 
 From a change on a laptop to production. `bootstrap/` is the only layer applied by hand; everything
-in `envs/` goes through this pipeline.
+in `envs/` goes through this pipeline. The one exception is a break-glass restore after the training
+account's nightly cleanup (above), which only puts back what's already on `main` and is recorded.
 
 1. **Branch:** `SCRUM-<n>-<desc>`, linked to the Jira issue.
 2. **Pull request to `main`.** `tf-plan` runs on every push:

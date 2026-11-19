@@ -68,6 +68,13 @@ needs_install() { # <namespace> <deployment>
   [ "${REINSTALL:-0}" = 1 ] || ! $KUBECTL -n "$1" get deployment "$2" >/dev/null 2>&1
 }
 
+# Break-glass reinstall over a chart Argo CD manages: Argo CD (field manager argocd-controller) owns
+# fields such as argocd-cm's timeout.reconciliation, and server-side apply refuses Helm's write with a
+# conflict. Helm takes them over with the same chart and values from Git; Argo CD's next sync takes
+# them back. Not needed on a new cluster, where nothing owns the fields yet.
+HELM_FORCE=()
+[ "${REINSTALL:-0}" = 1 ] && HELM_FORCE=(--force-conflicts)
+
 echo "==> External Secrets $ESO_CHART_VERSION"
 if needs_install external-secrets external-secrets; then
   helm upgrade --install external-secrets external-secrets \
@@ -76,6 +83,7 @@ if needs_install external-secrets external-secrets; then
     --version "$ESO_CHART_VERSION" \
     --namespace external-secrets --create-namespace \
     --values "$ROOT/deploy/bootstrap/external-secrets-values.yaml" \
+    "${HELM_FORCE[@]+"${HELM_FORCE[@]}"}" \
     --wait --timeout 10m
 else
   echo "Already installed; managed by Argo CD (deploy/platform/$ENV/external-secrets.yaml)"
@@ -106,6 +114,7 @@ if needs_install argocd argocd-server; then
     --version "$ARGOCD_CHART_VERSION" \
     --namespace argocd \
     --values "$ROOT/deploy/bootstrap/argocd-values.yaml" \
+    "${HELM_FORCE[@]+"${HELM_FORCE[@]}"}" \
     --wait --timeout 10m
 else
   echo "Already installed; managed by Argo CD (deploy/platform/$ENV/argocd.yaml)"
