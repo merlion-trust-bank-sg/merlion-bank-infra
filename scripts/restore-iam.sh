@@ -224,6 +224,9 @@ fi
 # A new JWT key, or pods that missed secret refreshes while the add-ons had no AWS access
 if $jwt_rotated || $nodes_replaced; then
   say "Refreshing the Kubernetes Secrets and restarting the app (logged-in users are logged out)"
+  # After new nodes, External Secrets' webhook may still be starting, and it validates every change to
+  # an ExternalSecret; wait for it, or the annotate below is refused ("no endpoints available")
+  kubectl -n external-secrets rollout status deployment --timeout=10m
   # All namespaces: the app's secrets and Argo CD's GitHub App credentials (argocd)
   kubectl annotate externalsecret --all -A force-sync="$(date +%s)" --overwrite
   sleep 15 # External Secrets refreshes within seconds of the annotation
