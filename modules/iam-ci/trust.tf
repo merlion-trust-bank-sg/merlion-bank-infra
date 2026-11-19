@@ -2,6 +2,7 @@
 #   ci-build    app repo, push to main             push images to ECR
 #   ci-plan     infra repo, pull requests          read-only terraform plan (staging)
 #   ci-prod-plan  infra repo, push/dispatch on main, no environment   read-only terraform plan (prod)
+#   ci-record   infra repo, main, no environment   add deploy records to the audit bucket, nothing else
 #   ci-staging  infra repo, environment staging    change staging only
 #   ci-prod     infra repo, environment production, after a reviewer approves   change prod only
 
@@ -22,6 +23,8 @@ locals {
       # A job on main WITHOUT an environment gets this sub. Only merged code can plan prod, and the
       # plan can't change anything; applying it needs ci-prod, behind the production approval.
       prod_plan = ["${local.sub_prefix[var.infra_repo]}:ref:refs/heads/main"]
+      # Same kind of job (merged code on main, no environment); can only add deploy records
+      record = ["${local.sub_prefix[var.infra_repo]}:ref:refs/heads/main"]
     },
   )
 }

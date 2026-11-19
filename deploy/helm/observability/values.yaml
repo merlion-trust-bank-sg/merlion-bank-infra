@@ -1,0 +1,14 @@
+# Our own monitoring configuration, on top of the upstream charts in deploy/platform/<env>/
+# (kube-prometheus-stack, Loki, Alloy, YACE). Per-environment values are passed in by the
+# ApplicationSet (deploy/platform/<env>/observability.yaml) from the cluster annotations.
+
+# Set per environment by the ApplicationSet
+env: ""
+clusterName: "" # e.g. g4-merlion-staging
+
+secretStore:
+  region: us-east-1
+
+# Secrets Manager secret written by deploy/bootstrap/put-alert-secret.sh.
+# Empty = <clusterName>/monitoring/alerting
+alertSecret: ""

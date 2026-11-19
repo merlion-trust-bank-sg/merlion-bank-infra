@@ -59,10 +59,14 @@ spec:
                     metrics:
                       - name: RequestCount
                         statistics: [Sum]
+                      # CloudWatch publishes no datapoint for a minute without errors. nilToZero turns
+                      # that into 0, so the error ratio is 0 instead of missing.
                       - name: HTTPCode_Target_5XX_Count
                         statistics: [Sum]
+                        nilToZero: true
                       - name: HTTPCode_ELB_5XX_Count
                         statistics: [Sum]
+                        nilToZero: true
                       - name: TargetResponseTime
                         statistics: [p95]
       destination:

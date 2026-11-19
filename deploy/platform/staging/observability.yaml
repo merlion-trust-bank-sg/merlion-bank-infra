@@ -1,0 +1,46 @@
+# Our monitoring configuration (deploy/helm/observability): the alert credentials from Secrets Manager,
+# SLO rules, alerts and the health dashboard (INF-16, INF-17). The stack it configures is installed by
+# kube-prometheus-stack.yaml, loki.yaml, alloy.yaml and yace.yaml next to this file.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: observability
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: staging
+  template:
+    metadata:
+      name: observability
+    spec:
+      project: platform # deploy/bootstrap/projects.yaml
+      source:
+        repoURL: https://github.com/merlion-trust-bank-sg/merlion-bank-infra
+        # The same branch as the root app: main normally, a branch when bootstrap.sh is testing one
+        targetRevision: '{{index .metadata.annotations "git_revision"}}'
+        path: deploy/helm/observability
+        helm:
+          valuesObject:
+            env: staging
+            clusterName: '{{index .metadata.annotations "cluster_name"}}'
+            secretStore:
+              region: '{{index .metadata.annotations "region"}}'
+      destination:
+        server: '{{.server}}'
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          # ExternalSecret and PrometheusRule are CRDs from other apps; don't fail the dry run before they exist
+          - SkipDryRunOnMissingResource=true
+        retry:
+          limit: 10
+          backoff: { duration: 15s, factor: 2, maxDuration: 3m }

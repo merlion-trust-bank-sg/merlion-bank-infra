@@ -9,7 +9,7 @@ data "aws_iam_policy_document" "deploy" {
   #checkov:skip=CKV_AWS_356:EC2, ELB, Auto Scaling, KMS and ACM resources get random IDs, so they can't be scoped by name; the env fence and Team denies limit them
   #checkov:skip=CKV_AWS_109:IAM changes only on own-env roles carrying the env's permissions boundary (IamWithBoundary); broad policies can't be attached
   #checkov:skip=CKV_AWS_111:Writes are limited to own-env names, or to unscoped services narrowed by the env fence and Team denies
-  #checkov:skip=CKV_AWS_107:No secret reads: only RDS-managed secret create/tag; GetSecretValue is never granted
+  #checkov:skip=CKV_AWS_107:Flagged for ec2:GetPasswordData (ec2:* on *); EKS nodes are Linux, so there's no Windows password. Secret reads are denied (DenyReadingSecrets)
   for_each = var.environments
 
   # Services whose resources can be scoped by name to this env
@@ -19,7 +19,6 @@ data "aws_iam_policy_document" "deploy" {
       "eks:*",
       "rds:*",
       "s3:*",
-      "secretsmanager:*",
       "logs:*",
       "sns:*",
       "firehose:*",
@@ -40,6 +39,27 @@ data "aws_iam_policy_document" "deploy" {
       "acm:*",
     ]
     resources = ["*"]
+  }
+
+  # Only what aws_secretsmanager_secret and a write-only aws_secretsmanager_secret_version call
+  # (AWS provider 6.x). With secret_string_wo the provider never reads the value back.
+  statement {
+    sid = "OwnSecrets"
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:UpdateSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:PutResourcePolicy",
+      "secretsmanager:DeleteResourcePolicy",
+      "secretsmanager:TagResource",
+      "secretsmanager:UntagResource",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:ListSecretVersionIds",
+      "secretsmanager:UpdateSecretVersionStage",
+    ]
+    resources = [local.env_secret_arns[each.key]]
   }
 
   # manage_master_user_password: RDS creates the rds!... secret on the caller's behalf, so the caller
@@ -232,6 +252,14 @@ data "aws_iam_policy_document" "deploy" {
     not_resources = [
       "arn:aws:autoscaling:${local.r}:${local.a}:autoScalingGroup:*:autoScalingGroupName/eks-${local.p}-${each.key}-*",
     ]
+  }
+
+  # Secret values (JWT signing key, RDS master passwords) are only for the workloads (External Secrets)
+  statement {
+    sid       = "DenyReadingSecrets"
+    effect    = "Deny"
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:BatchGetSecretValue"]
+    resources = ["*"]
   }
 
   # Application logs can hold customer data; the pipeline never reads them

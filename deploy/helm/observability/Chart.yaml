@@ -1,0 +1,5 @@
+apiVersion: v2
+name: observability
+description: Merlion Trust Bank monitoring config - alert credentials, SLO rules, alerts and the health dashboard
+type: application
+version: 0.1.0
