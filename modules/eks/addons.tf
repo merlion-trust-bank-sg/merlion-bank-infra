@@ -24,6 +24,9 @@ locals {
   }
 }
 
+# The version each add-on runs: the one the environment pins (var.addon_versions), so plans change
+# only with a commit and upgrades are reviewed PRs, staging first. An add-on that isn't pinned gets
+# the newest version for the cluster's Kubernetes version.
 data "aws_eks_addon_version" "latest" {
   for_each = local.addons
 
@@ -37,7 +40,7 @@ resource "aws_eks_addon" "before_nodes" {
 
   cluster_name                = aws_eks_cluster.this.name
   addon_name                  = each.key
-  addon_version               = data.aws_eks_addon_version.latest[each.key].version
+  addon_version               = lookup(var.addon_versions, each.key, data.aws_eks_addon_version.latest[each.key].version)
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 }
@@ -47,7 +50,7 @@ resource "aws_eks_addon" "after_nodes" {
 
   cluster_name                = aws_eks_cluster.this.name
   addon_name                  = each.key
-  addon_version               = data.aws_eks_addon_version.latest[each.key].version
+  addon_version               = lookup(var.addon_versions, each.key, data.aws_eks_addon_version.latest[each.key].version)
   configuration_values        = lookup(local.addon_configuration, each.key, null)
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
