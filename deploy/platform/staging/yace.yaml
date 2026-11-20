@@ -57,6 +57,9 @@ spec:
                         value: ^{{index .metadata.annotations "cluster_name"}}$
                     period: 60
                     length: 300
+                    # One series per load balancer. Without this, CloudWatch's per-AZ and per-target-group
+                    # series come back too, and sum() in the SLO rules would count requests several times.
+                    dimensionNameRequirements: [LoadBalancer]
                     metrics:
                       - name: RequestCount
                         statistics: [Sum]
@@ -98,12 +101,16 @@ spec:
                         value: ^{{index .metadata.labels "environment"}}$
                     period: 300
                     length: 900
-                    nilToZero: true
                     metrics:
+                      # No datapoint = no records came in: 0 is the right reading
                       - name: IncomingRecords
                         statistics: [Sum]
+                        nilToZero: true
+                      # Published only when Firehose delivers something. No datapoint = nothing to
+                      # deliver, not 0% success, so it must stay missing (no false critical at night).
                       - name: DeliveryToS3.Success
                         statistics: [Average]
+                        nilToZero: false
       destination:
         server: '{{.server}}'
         namespace: monitoring
