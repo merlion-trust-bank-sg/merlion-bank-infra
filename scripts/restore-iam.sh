@@ -7,7 +7,8 @@
 # add-ons lose AWS access. Re-applying bootstrap and staging from main recreates them.
 #
 # For each layer (bootstrap, then envs/<env>) this plans from main and:
-#   - applies straight away if the plan only creates inline policies / policy attachments
+#   - applies straight away if the plan only has known restore steps (stripped policies, the
+#     console-alert rule, a node group it replaces on purpose)
 #   - otherwise prints the other changes and asks before applying
 # If the JWT secret got a new version, it then refreshes the Kubernetes Secrets and restarts the app.
 # Before the env plan it also puts back the EKS cluster security group's rules (not in Terraform).
@@ -137,6 +138,7 @@ for layer in "${LAYERS[@]}"; do
   dir="$ROOT/$layer"
   plan="$dir/restore.tfplan"
   extra=()
+  replacing="" # the node group this run replaces on purpose, if any
   # The cleanup also deletes the node group's Auto Scaling group and launch template. EKS can't repair
   # a node group without its ASG (status DEGRADED, AutoScalingGroupNotFound), so replace it.
   if [ "$layer" = "envs/$ENV" ]; then
@@ -157,7 +159,8 @@ for layer in "${LAYERS[@]}"; do
       nodes_replaced=true
     elif grep -qE "AutoScalingGroupNotFound|Ec2LaunchTemplateNotFound" <<<"$ng_issues"; then
       echo "Node group lost its Auto Scaling group / launch template: it will be replaced (~10 minutes)."
-      extra=("-replace=$EKS_MODULE.aws_eks_node_group.default")
+      replacing="$EKS_MODULE.aws_eks_node_group.default"
+      extra=("-replace=$replacing")
       nodes_replaced=true
     fi
   fi
@@ -178,16 +181,29 @@ for layer in "${LAYERS[@]}"; do
     | select(.change.actions != ["no-op"] and .change.actions != ["read"])
     | {address, type, actions: (.change.actions | join(","))}]')"
 
+  # Known restore steps, applied without asking:
+  #   - stripped role policies and policy attachments, created again
+  #   - the console-write alert's EventBridge rule and target, which the cleanup deletes, and the SNS
+  #     topic policy that refers to them
+  #   - the node group this run replaces on purpose, and the tags on its new Auto Scaling group
+  # Anything else (another update, destroy or replacement) is shown and needs a "y".
+  known='def known($rep; $eks):
+      (.actions == "create" and (.type == "aws_iam_role_policy" or .type == "aws_iam_role_policy_attachment"))
+      or ((.address | startswith("module.console_alert."))
+          and ((.actions == "create" and (.type == "aws_cloudwatch_event_rule" or .type == "aws_cloudwatch_event_target"))
+               or (.actions == "update" and .type == "aws_sns_topic_policy")))
+      or ($rep != "" and (.address == $rep
+          or (.type == "aws_autoscaling_group_tag" and (.address | startswith($eks + ".aws_autoscaling_group_tag.node")))));'
   echo "Restoring:"
-  jq -r '.[] | select(.actions == "create" and (.type == "aws_iam_role_policy" or .type == "aws_iam_role_policy_attachment"))
-    | "  + \(.address)"' <<<"$changes"
+  jq -r --arg rep "$replacing" --arg eks "$EKS_MODULE" "$known"' .[] | select(known($rep; $eks))
+    | "  \(.actions): \(.address)"' <<<"$changes"
 
-  other="$(jq -r '.[] | select((.actions == "create" and (.type == "aws_iam_role_policy" or .type == "aws_iam_role_policy_attachment")) | not)
+  other="$(jq -r --arg rep "$replacing" --arg eks "$EKS_MODULE" "$known"' .[] | select(known($rep; $eks) | not)
     | "  \(.actions): \(.address)"' <<<"$changes")"
 
   if [ -n "$other" ]; then
     echo
-    echo "Also in the plan (not an IAM restore, review it):"
+    echo "Also in the plan (not a known restore step, review it):"
     echo "$other"
     if grep -q "delete" <<<"$other"; then
       echo
@@ -201,7 +217,7 @@ for layer in "${LAYERS[@]}"; do
   grep -q "aws_secretsmanager_secret_version.jwt" <<<"$other" && jwt_rotated=true
 
   say "$layer: apply"
-  terraform -chdir="$dir" apply -input=false "$plan"
+  terraform -chdir="$dir" apply -input=false -lock-timeout=10m "$plan"
   rm -f "$plan"
   applied+=("$(jq -c --arg l "$layer" '{layer: $l, changes: .}' <<<"$changes")")
 done

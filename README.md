@@ -95,8 +95,9 @@ fix this itself, because the roles it signs in with are among those stripped.
 | Roles stripped; prod degraded | **Break-glass holder only** (yqyeoh, cluster admin in prod) | `scripts/restore-iam.sh prod` |
 | State bucket gone (the cleanup took more than IAM) | Any admin | `scripts/rebuild-bootstrap.sh` |
 
-`restore-iam.sh` plans from an up-to-date `main` only. It applies on its own only if the plan just
-recreates the stripped policies; anything else waits for a `y`. It also puts back the cluster
+`restore-iam.sh` plans from an up-to-date `main` only. It applies on its own when the plan has only
+known restore steps (stripped policies, the console-alert rule the cleanup deletes, and a node group
+it replaces on purpose); anything else, such as another update or a destroy, waits for a `y`. It also puts back the cluster
 security group's rules and replaces a node group whose Auto Scaling group is gone, then refreshes
 the Kubernetes Secrets and restarts the bank.
 
