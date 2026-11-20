@@ -5,6 +5,18 @@ module "eks" {
 
   name               = local.name
   kubernetes_version = "1.37"
+
+  # Exact add-on versions for this Kubernetes version (from aws eks describe-addon-versions). A plan
+  # never upgrades an add-on by itself: bump these in a PR, staging first, then prod.
+  addon_versions = {
+    vpc-cni                = "v1.23.3-eksbuild.2"
+    kube-proxy             = "v1.37.0-eksbuild.39"
+    eks-pod-identity-agent = "v1.5.0-eksbuild.3"
+    coredns                = "v1.14.7-eksbuild.35"
+    aws-ebs-csi-driver     = "v1.68.1-eksbuild.1"
+    metrics-server         = "v0.9.1-eksbuild.2"
+  }
+
   private_subnet_ids = module.network[0].private_subnets
 
   # The API endpoint is public so GitHub-hosted runners can bootstrap Argo CD; they have no fixed IPs.

@@ -106,3 +106,13 @@ variable "protect_log_group" {
   type        = bool
   default     = false
 }
+
+variable "addon_versions" {
+  description = <<-EOT
+    Exact EKS add-on versions by add-on name, e.g. { vpc-cni = "v1.21.1-eksbuild.3" }. Pinned per
+    environment so a plan never upgrades an add-on by itself; an add-on not listed gets the newest
+    version for the cluster's Kubernetes version.
+  EOT
+  type        = map(string)
+  default     = {}
+}

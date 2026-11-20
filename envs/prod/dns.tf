@@ -9,7 +9,10 @@ module "dns" {
 
 locals {
   app_hostname     = module.dns.hostnames[local.environment]
-  grafana_hostname = "grafana.${local.app_hostname}" # the health dashboard (INF-17)
+  grafana_hostname = "grafana.${local.app_hostname}" # the health dashboard
+  # Every name on the certificate. Known at plan time, so it keys the validation records below: the
+  # certificate's own validation options only exist after it's created, which fails a first plan.
+  certificate_names = [local.app_hostname, local.grafana_hostname]
 }
 
 data "aws_route53_zone" "course" {
@@ -21,8 +24,8 @@ data "aws_route53_zone" "course" {
 resource "aws_acm_certificate" "app" {
   count = local.enabled ? 1 : 0
 
-  domain_name               = local.app_hostname
-  subject_alternative_names = [local.grafana_hostname]
+  domain_name               = local.certificate_names[0]
+  subject_alternative_names = slice(local.certificate_names, 1, length(local.certificate_names))
   validation_method         = "DNS"
 
   lifecycle {
@@ -31,15 +34,19 @@ resource "aws_acm_certificate" "app" {
 }
 
 # ACM checks this record to confirm we control the name, then issues the certificate
-resource "aws_route53_record" "app_validation" {
-  for_each = {
+locals {
+  certificate_validation = {
     for o in flatten(aws_acm_certificate.app[*].domain_validation_options) : o.domain_name => o
   }
+}
+
+resource "aws_route53_record" "app_validation" {
+  for_each = local.enabled ? toset(local.certificate_names) : toset([])
 
   zone_id         = data.aws_route53_zone.course[0].zone_id
-  name            = each.value.resource_record_name
-  type            = each.value.resource_record_type
-  records         = [each.value.resource_record_value]
+  name            = local.certificate_validation[each.key].resource_record_name
+  type            = local.certificate_validation[each.key].resource_record_type
+  records         = [local.certificate_validation[each.key].resource_record_value]
   ttl             = 300
   allow_overwrite = true # the same record survives a rebuild if the nightly cleanup leaves it
 }

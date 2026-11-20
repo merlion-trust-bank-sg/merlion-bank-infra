@@ -9,8 +9,10 @@ locals {
 }
 
 module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 6.7"
+  source = "terraform-aws-modules/vpc/aws"
+  # Exact version: a new release changes nothing until a PR bumps it (a range let plans change by
+  # themselves, e.g. the flow-log IAM policy)
+  version = "6.8.0"
 
   name = var.name
   cidr = var.cidr
