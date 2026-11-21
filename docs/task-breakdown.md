@@ -14,12 +14,15 @@ Region: **`us-east-1`** (2 AZs: `us-east-1a`, `us-east-1b`) · Environments: **s
 
 | Role | Member | Primary ownership | Main repo |
 |---|---|---|---|
-| Solutions Architect | **SA** – _name_ | Requirements, architecture diagram, service selection, constraint mapping, cost, ADRs, audit controls | `merlion-bank-infra` (docs + audit) |
-| DevSecOps Engineer 1 | **DO1** – _name_ | Terraform foundations: state, OIDC roles, VPC, EKS; Helm chart & secrets wiring | `merlion-bank-infra` |
-| DevSecOps Engineer 2 | **DO2** – _name_ | RDS, ECR, KMS, Secrets Manager, cluster add-ons, both CI/CD pipelines, security gates | `merlion-bank-app` |
-| Site Reliability Engineer | **SRE** – _name_ | Self-hosted Prometheus, Loki, Grafana, Alertmanager; dashboards, SLO rules, alert routing, runbook, cost | Both |
+| Solutions Architect | **SA** – kealeee | Requirements, architecture diagram, service selection, constraint mapping, cost, ADRs, audit controls | `merlion-bank-infra` (docs + audit) |
+| DevSecOps Engineer (DO1 + DO2) | **DO** – yqyeoh | DO1: Terraform foundations: state, OIDC roles, VPC, EKS; Helm chart & secrets wiring. DO2: RDS, ECR, KMS, Secrets Manager, cluster add-ons, both CI/CD pipelines, security gates | Both |
+| Site Reliability Engineer | **SRE** – paulyapsl | Self-hosted Prometheus, Loki, Grafana, Alertmanager; dashboards, SLO rules, alert routing, runbook, cost | Both |
 
-> README note (required by brief): *"As a 4-person team we doubled up on **DevSecOps**, the heaviest phase for Merlion Trust because auditability and credential separation are hard constraints. DO1 owns the infrastructure foundations, DO2 owns data services and the delivery pipelines."*
+The plan was written for four people, with two DevSecOps engineers (DO1 and DO2). We are three, so
+one DevSecOps engineer holds both lists; the DO1 and DO2 labels are kept in the tickets and in
+section 7, so the split of the work is still visible.
+
+> README note (required by brief): *"We are a 3-person team: one Solutions Architect, one DevSecOps engineer and one SRE. DevSecOps is the heaviest phase for Merlion Trust, because auditability and credential separation are hard constraints, so the one DevSecOps engineer owns both halves of it (the infrastructure foundations, and the data services and delivery pipelines). The SA and SRE review those PRs, and every PR is approved by someone other than its author."*
 
 **Everyone commits to both repos.** See the contribution matrix in [section 7](#7-contribution-matrix).
 
@@ -206,6 +209,8 @@ Replace `SCRUM-<n>` with the Jira issue number when you create the ticket.
 ---
 
 ## 7. Contribution matrix
+
+As planned for four people. The DO1 and DO2 rows are one person (yqyeoh, section 1).
 
 Number of PRs each member authors in each repo:
 

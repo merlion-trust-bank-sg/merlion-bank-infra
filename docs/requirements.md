@@ -43,7 +43,7 @@ features are not in scope; the platform around it is.
 - Security gates in CI: dependency (SCA) and container image scanning with failing thresholds
 - Credential hygiene: per-environment roles, short-lived credentials (GitHub OIDC), no secrets in code
 - Centralised logging, metrics, dashboard, 2 SLOs, 2 live alerts, 1 incident runbook
-- Team of four (SA, two DevSecOps, SRE); work tracked on the Jira SCRUM board, and every PR is approved by someone other than its author
+- Team of three (SA, DevSecOps, SRE); work tracked on the Jira SCRUM board, and every PR is approved by someone other than its author
 
 ## 6. Assumptions
 | ID | Assumption |

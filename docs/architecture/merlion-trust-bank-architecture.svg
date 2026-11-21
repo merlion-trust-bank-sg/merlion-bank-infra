@@ -56,7 +56,7 @@
 <text class="t2" x="58" y="377">merlion-bank-infra</text>
 <text class="s" x="58" y="396">PR: checks + staging plan (ci-plan)</text>
 <text class="s" x="58" y="414">main: apply staging → prod plan → approval</text>
-<text class="s" x="58" y="432">deploy/ → Argo CD pulls from main (GitOps)</text>
+<text class="s" x="58" y="432">deploy/ → Argo CD (read-only GitHub App)</text>
 <line class="arr" x1="180" y1="455" x2="180" y2="478" marker-end="url(#a)"/>
 
 <rect class="box" x="30" y="480" width="300" height="58" rx="4"/>
@@ -72,15 +72,16 @@
 <text class="s" x="30" y="645">g4-merlion-ci-build / -plan / -prod-plan (read-only)</text>
 <text class="s" x="30" y="665">-staging / -prod: own env only; prod after approval</text>
 <text class="s" x="30" y="685">-record: adds deploy records to the audit bucket</text>
+<text class="s" x="30" y="703">break-glass: one named admin, restores recorded</text>
 
-<text class="m" x="30" y="720" font-size="12">NOTE</text>
-<text class="s" x="30" y="740">CI run logs are stored by GitHub,</text>
-<text class="s" x="30" y="758">outside AWS. Keep customer data</text>
-<text class="s" x="30" y="776">and app logs out of CI output.</text>
+<text class="m" x="30" y="733" font-size="12">NOTE</text>
+<text class="s" x="30" y="753">CI run logs are stored by GitHub,</text>
+<text class="s" x="30" y="771">outside AWS. Keep customer data</text>
+<text class="s" x="30" y="789">and app logs out of CI output.</text>
 
-<rect class="plan" x="30" y="900" width="300" height="58" rx="4"/>
-<text class="t" x="45" y="924">On-call engineer <tspan class="pl">PLANNED</tspan></text>
-<text class="s" x="45" y="945">Telegram alerts (INF-16)</text>
+<rect class="box" x="30" y="900" width="300" height="58" rx="4"/>
+<text class="t" x="45" y="924">On-call engineer</text>
+<text class="s" x="45" y="945">Telegram group · alerts + 12 h heartbeat</text>
 
 <!-- ===== Production account ===== -->
 <rect class="frame" x="380" y="130" width="780" height="590" rx="4"/>
@@ -210,19 +211,19 @@
 <rect class="box" x="774" y="790" width="172" height="70" rx="4"/>
 <text class="t" x="786" y="812">Grafana</text>
 <text class="s" x="786" y="832">Health, SLOs, logs</text>
-<text class="s" x="786" y="850">for non-team viewers</text>
+<text class="s" x="786" y="850">own ALB · viewer login</text>
 <rect class="red" x="961" y="790" width="172" height="70" rx="4"/>
 <text class="t" x="973" y="812">Alertmanager</text>
-<text class="s" x="973" y="832">SLO rules: avail., p95</text>
-<text class="s" x="973" y="850">routing <tspan class="pl">PLANNED</tspan></text>
+<text class="s" x="973" y="832">routes to Telegram</text>
+<text class="s" x="973" y="850">SLO rules <tspan class="pl">PLANNED</tspan></text>
 
 <text class="s" x="400" y="900">SLIs: availability = 1 − ALB 5xx ratio (SLO 99.9%)</text>
 <text class="s" x="400" y="920">latency = p95 ALB target response time (SLO &lt; 500 ms)</text>
 <text class="s" x="400" y="950">Storage: Loki chunks → S3 bucket (us-east-1, KMS) · Prometheus → EBS volume</text>
 <text class="s" x="400" y="970">Stack: kube-prometheus-stack, Loki, Alloy, YACE via Argo CD, namespace monitoring</text>
 
-<path class="parr" d="M1047 860 L1047 1015 L180 1015 L180 961" marker-end="url(#r)"/>
-<text class="m" x="430" y="1008">planned: Alertmanager → Telegram · alert text contains no customer data</text>
+<path class="rarr" d="M1047 860 L1047 1015 L180 1015 L180 961" marker-end="url(#r)"/>
+<text class="m" x="430" y="1008">Alertmanager → Telegram · alert text contains no customer data</text>
 
 <!-- ===== Audit ===== -->
 <rect class="frame" x="1180" y="740" width="380" height="300" rx="4"/>

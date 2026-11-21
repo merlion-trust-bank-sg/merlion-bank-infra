@@ -4,9 +4,11 @@ Terraform for Merlion Trust Bank (Bank of Anthos on Amazon EKS) in **us-east-1**
 (ADR-006). Environments: staging and prod, in one shared AWS account, separated by their own
 state bucket and KMS key, per-environment CI roles, and IAM guardrails (ADR-002).
 
-> As a 4-person team we doubled up on **DevSecOps**, the heaviest phase for Merlion
-> Trust because auditability and credential separation are hard constraints. DO1
-> owns the infrastructure foundations, DO2 owns data services and the delivery pipelines.
+> We are a 3-person team: one Solutions Architect, one DevSecOps engineer and one SRE.
+> DevSecOps is the heaviest phase for Merlion Trust, because auditability and credential
+> separation are hard constraints, so the one DevSecOps engineer owns both halves of it (the
+> infrastructure foundations, and the data services and delivery pipelines). The SA and SRE
+> review those PRs, and every PR is approved by someone other than its author.
 
 | Path | What | Applied by |
 |---|---|---|
