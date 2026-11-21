@@ -8,10 +8,10 @@ Explorer aren't available in the training account (README, Cost controls).
 ## Summary
 | Scope | Monthly (USD) | Notes |
 |---|---:|---|
-| **Production** (when on) | **≈ 513** | Table 1. Off by default (`enabled = false` in `envs/prod`): USD 0 while torn down |
+| **Production** (when on) | **≈ 538** | Table 1. Off by default (`enabled = false` in `envs/prod`): USD 0 while torn down. ≈ 32 of it is the monitoring stack, which prod doesn't have yet |
 | **Shared** (state, audit trail, ECR) | **≈ 10** | Table 2, trail records write events only (ADR-004) |
-| **Staging** (≈ 220 h/month) | **≈ 99** | Table 3; ≈ 313 if left on 24/7 |
-| **Total** | **≈ 622** | ≈ 109 while prod is off |
+| **Staging** (≈ 220 h/month) | **≈ 107** | Table 3; ≈ 338 if left on 24/7 |
+| **Total** | **≈ 655** | ≈ 117 while prod is off |
 
 ## 1. Production
 | Item | Sizing / assumption | Unit price | Monthly |
@@ -35,7 +35,13 @@ Explorer aren't available in the training account (README, Cost controls).
 | CloudWatch Logs storage | 365-day retention; ≈ 180 GB after a year | $0.03 / GB-mo | 5.40 |
 | Loki chunks (S3) | ≈ 60 GB after a year (365-day retention) | $0.023 / GB-mo | 1.38 |
 | YACE (CloudWatch API) | ≈ 10 ALB metrics every 60 s ≈ 440,000 metrics | $0.01 / 1,000 metrics | 4.38 |
-| **Total** | | | **≈ 513** |
+| Grafana's own ALB | 1 ALB, very little traffic, plus its 2 public IPv4 addresses. Kept apart from the bank's ALB so its traffic isn't counted in the SLIs (#49) | $0.0225 / h + 2 × $0.005 / h | 24.00 |
+| EKS audit log copy (Firehose) | ≈ 3 million audit events, billed in 5 KB steps ≈ 15 GB; GZIP copies in the audit bucket ≈ 1 GB a month (#40) | $0.029 / GB + S3 | 1.00 |
+| **Total** | | | **≈ 538** |
+
+The monitoring rows (Prometheus and Loki volumes, Loki chunks, YACE and Grafana's ALB, ≈ 32 a month)
+apply once prod gets the same monitoring stack as staging; `deploy/platform/prod/` doesn't have it
+yet.
 
 ## 2. Shared (bootstrap layer, one per account)
 | Item | Sizing / assumption | Unit price | Monthly |
@@ -76,8 +82,9 @@ on (cost as in the first row).
 
 ## 3. Staging
 Same modules, smaller: 4 × `t3.medium` (as prod, for pod capacity), 2 × `db.t4g.small`
-**single-AZ**, 1 NAT gateway, no interface endpoints. Staging is rebuilt by the pipeline and removed
-every night, so it runs about 10 hours a day on working days (≈ 220 hours a month).
+**single-AZ**, 1 NAT gateway, no interface endpoints. The estimate assumes staging runs about 10
+hours a day on working days (≈ 220 hours a month). The nightly teardown's schedule has been disabled
+since 15 Nov, so until the SRE sets a new one, the 24/7 column applies.
 
 | Item | Per hour | ≈ 220 h | 24/7 (730 h) |
 |---|---:|---:|---:|
@@ -87,15 +94,17 @@ every night, so it runs about 10 hours a day on working days (≈ 220 hours a mo
 | 1 NAT gateway | 0.045 | 9.90 | 32.85 |
 | 3 public IPv4 (NAT + ALB) | 0.015 | 3.30 | 10.95 |
 | ALB (≈ 1 LCU) | 0.031 | 6.71 | 22.27 |
-| Storage, logs, keys, secrets | – | ≈ 6.00 | ≈ 6.00 |
-| **Total** | **≈ 0.42** | **≈ 99** | **≈ 313** |
+| Grafana's ALB and its 2 public IPv4 addresses | 0.033 | 7.26 | 24.00 |
+| Storage, logs, keys, secrets, audit log copy (Firehose) | – | ≈ 7.00 | ≈ 7.00 |
+| **Total** | **≈ 0.45** | **≈ 107** | **≈ 338** |
 
 ## 4. Cost levers (NFR-7)
 | Lever | Saving | Trade-off |
 |---|---:|---|
-| Prod off by default (`enabled = false`), **in use** | ≈ 513 / month while off | Bringing prod up is a reviewed PR plus a production approval |
+| Prod off by default (`enabled = false`), **on since 19 Nov for testing and the demo** | ≈ 538 / month while off | Bringing prod up is a reviewed PR plus a production approval |
 | CloudTrail write events only, **in use** | ≈ 35–235 / month | Read events only in the account's trail (ADR-004) |
-| Staging torn down nightly (INF-18), **in use** | ≈ 214 / month vs 24/7 | Start-up time before testing |
+| Staging torn down when idle (INF-18), **schedule disabled since 15 Nov** | ≈ 231 / month vs 24/7 | Start-up time (about 30 minutes) before testing |
+| Grafana behind the bank's ALB (one ingress group) | ≈ 24 / month per environment | Grafana's traffic would be counted in the bank's SLIs, and moving the bank's Ingress into a group replaces its ALB (#49) |
 | No interface endpoints in prod | ≈ 73 / month | ECR, STS, Secrets Manager and Logs traffic goes through NAT (paid per GB) and leaves the VPC |
 | One NAT gateway in prod | ≈ 37 / month (gateway + its IPv4 address) | An AZ outage cuts egress for the other AZ (NFR-3) |
 | Compute Savings Plan (1 year, no upfront) | roughly 20–30% of node cost | Commitment beyond the project |

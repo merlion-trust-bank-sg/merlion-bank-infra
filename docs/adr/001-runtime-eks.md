@@ -16,7 +16,7 @@ Constraints that shape the choice:
 - **HC-2 auditability:** every change must flow through a pipeline; the deployment definition must
   be code that is reviewed in a PR.
 - **NFR-1/3:** 99.9% availability, survive the loss of one AZ.
-- Team skills: the team of four has lab experience with Kubernetes, Helm, Prometheus, Loki and Grafana.
+- Team skills: the team of three has lab experience with Kubernetes, Helm, Prometheus, Loki and Grafana.
 
 ## Decision
 Use **Amazon EKS** (managed Kubernetes control plane) with a **managed node group** in private
