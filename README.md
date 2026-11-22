@@ -203,6 +203,46 @@ If prod has no changes, the run ends after the prod plan and asks for no approva
 Every AWS call from the pipeline uses the role session name `ci-<run id>-<attempt>`, so CloudTrail
 events link back to the GitHub run, its commit and its approver.
 
+## Observability
+
+Self-hosted in each cluster (ADR-003): Prometheus, Alertmanager and Grafana (kube-prometheus-stack),
+Loki for logs, Grafana Alloy to collect pod logs, and YACE to copy CloudWatch metrics (ALB, RDS, the
+audit log's Firehose) into Prometheus. Installed by Argo CD from `deploy/platform/<env>/`; our own
+rules, alerts and dashboard are the `deploy/helm/observability` chart. The AWS side (Loki's bucket and
+key, Pod Identity roles) is `modules/observability`, used by `envs/<env>/observability.tf`.
+
+| | Staging | Prod |
+|---|---|---|
+| Grafana | https://grafana.merlion-staging.sctp-sandbox.com | https://grafana.merlion.sctp-sandbox.com |
+| Logins | `admin` (team), `viewer` (read-only, for assessors) | same |
+| Logs | Loki, chunks in S3 `g4-merlion-staging-loki` | S3 `g4-merlion-prod-loki` |
+| Metrics | Prometheus, 15 days on an encrypted gp3 volume | same |
+| Alerts | Telegram team group, labelled `environment=staging` | same group, `environment=prod` |
+
+Everything stays in `us-east-1`; no logs or metrics leave the account. Telegram receives only alert
+names, labels and the rule text, never log lines.
+
+- **Logins and the bot token:** in Secrets Manager (`g4-merlion-<env>/monitoring/alerting`), written
+  once per environment by `deploy/bootstrap/put-alert-secret.sh <env>` and copied into the cluster by
+  External Secrets. Read a password with
+  `aws secretsmanager get-secret-value --secret-id g4-merlion-<env>/monitoring/alerting --query SecretString --output text | jq -r .grafana_admin_password`.
+- **SLOs:** 99.9% availability and p95 under 500 ms at the bank's ALB; definitions, error budget and
+  policy in merlion-bank-app [`ops/slo/slo.md`](https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/slo/slo.md).
+- **Alerts:** `deploy/helm/observability/rules/bank-slo.rules.yaml` (burn-rate alerts for availability,
+  p95 latency, a service with no pods, crash loops, a database with no connections, the audit log
+  export), plus the chart's built-in Kubernetes alerts. A Watchdog message every 12 hours proves the
+  path to Telegram works.
+- **Incident runbook:** merlion-bank-app [`ops/runbooks/bank-service-down.md`](https://github.com/merlion-trust-bank-sg/merlion-bank-app/blob/main/ops/runbooks/bank-service-down.md);
+  saved log and metric queries in `ops/queries/`.
+- **Retention:** application logs 365 days (Loki and S3), metrics 15 days, Kubernetes audit log 365
+  days in CloudWatch plus the Object Lock copy.
+
+**Prod teardown and the log bucket.** Prod's Loki bucket keeps `force_destroy = false`, so Terraform
+can't delete 365 days of logs by accident. Tearing prod down (the two-PR order in
+`envs/prod/variables.tf`) therefore needs one manual step first: empty `g4-merlion-prod-loki`,
+including old versions, since the bucket is versioned (S3 console: select the bucket, then
+**Empty**). Otherwise the destroy stops at the bucket. Staging's bucket has `force_destroy = true`.
+
 ## Cost controls
 
 Monthly estimate: `docs/cost-estimate.md` (DOC-05).

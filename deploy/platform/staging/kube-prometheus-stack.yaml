@@ -39,6 +39,10 @@ spec:
               prometheusSpec:
                 # Short-term metrics; long-term evidence is the 365-day logs and the audit trail
                 retention: 15d
+                # Added to every alert, so staging and prod alerts in the shared Telegram group can be
+                # told apart
+                externalLabels:
+                  environment: staging
                 # Pick up ServiceMonitors and rules from every namespace and chart, not only this one
                 serviceMonitorSelectorNilUsesHelmValues: false
                 podMonitorSelectorNilUsesHelmValues: false
