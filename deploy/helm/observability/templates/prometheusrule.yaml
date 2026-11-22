@@ -1,5 +1,5 @@
 # SLO recording rules and alerts (INF-17, APP-14). The rules themselves are plain Prometheus rule
-# files in rules/, loaded as-is, so their {{ $labels }} templates don't clash with Helm's.
+# files in rules/, loaded as-is with .Files.Get, so the alert-template braces in them are not read by Helm.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
