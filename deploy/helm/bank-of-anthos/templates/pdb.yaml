@@ -1,16 +1,19 @@
-# Keep at least one frontend up during node drains and upgrades
-{{- with .Values.services.frontend }}
-{{- if gt (int (include "boa.minReplicas" .)) 1 }}
+# Keep at least one pod of each service up during node drains and upgrades. Only for services that
+# run 2 or more: with one replica, minAvailable 1 would block the drain until it times out.
+{{- range $name, $svc := .Values.services }}
+{{- if gt (int (include "boa.minReplicas" $svc)) 1 }}
+---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: frontend
+  name: {{ $name }}
   labels:
+    app: {{ $name }}
     {{- include "boa.labels" $ | nindent 4 }}
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: frontend
+      app: {{ $name }}
 {{- end }}
 {{- end }}
