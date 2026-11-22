@@ -105,7 +105,7 @@ spec:
                   - name: team
                     telegram_configs:
                       - bot_token_file: /etc/alertmanager/secrets/alertmanager-notify/telegram-bot-token
-                        chat_id: -7684609646 # the team alert group (a chat ID is not a secret)
+                        chat_id: -5328667153 # the team alert group (a chat ID is not a secret)
                         send_resolved: true
                     # email_configs:
                     #   - to: <team mailbox>
@@ -113,7 +113,7 @@ spec:
                   - name: heartbeat
                     telegram_configs:
                       - bot_token_file: /etc/alertmanager/secrets/alertmanager-notify/telegram-bot-token
-                        chat_id: -7684609646
+                        chat_id: -5328667153
                         send_resolved: false
               alertmanagerSpec:
                 # Kubernetes Secret from External Secrets (deploy/helm/observability), mounted at
