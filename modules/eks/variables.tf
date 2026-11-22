@@ -40,7 +40,7 @@ variable "node_min_size" {
 }
 
 variable "node_desired_size" {
-  description = "Nodes at creation. Ignored afterwards so an autoscaler can change it."
+  description = "Nodes to run. Managed by Terraform: there is no cluster autoscaler."
   type        = number
 }
 
