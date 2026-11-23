@@ -35,7 +35,8 @@ by **Argo CD** from `merlion-bank-infra` (GitOps, ADR-007). Pods that call AWS u
 - Self-hosted observability (ADR-003) runs naturally on the same cluster, keeping logs in-region (HC-1).
 - Helm values per environment, applied by Argo CD from `main`, give one reviewed, versioned deployment
   definition (HC-2).
-- PDBs, multi-replica `frontend`, and nodes across 2 AZs support NFR-1/NFR-3.
+- Every service runs 2+ replicas spread over 2 AZs, each with a PDB, so losing a pod or a node (or
+  draining one for an upgrade) leaves every service up (NFR-1/NFR-3).
 - Pod Identity gives each workload least-privilege AWS access (e.g. External Secrets, Loki → S3), and its
   roles survive cluster rebuilds because the trust policy doesn't name the cluster.
 

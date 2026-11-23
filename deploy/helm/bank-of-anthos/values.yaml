@@ -26,6 +26,8 @@ bank:
   demoLogin: { username: testuser, password: bankofanthos }
 
 # One entry per service. image.digest is set per environment.
+# Every service runs at least 2 replicas, so losing one pod or one node leaves each service up. With 2
+# or more, services.yaml spreads them over both AZs and pdb.yaml keeps one up during node drains.
 services:
   frontend:
     image: { name: frontend, digest: "" }
@@ -52,7 +54,7 @@ services:
       BACKEND_TIMEOUT: "4"
   userservice:
     image: { name: userservice, digest: "" }
-    replicas: 1
+    replicas: 2
     port: 8080
     servicePort: 8080
     kind: python
@@ -66,7 +68,7 @@ services:
       TOKEN_EXPIRY_SECONDS: "3600"
   contacts:
     image: { name: contacts, digest: "" }
-    replicas: 1
+    replicas: 2
     port: 8080
     servicePort: 8080
     kind: python
@@ -79,7 +81,7 @@ services:
     env: {}
   ledgerwriter:
     image: { name: ledgerwriter, digest: "" }
-    replicas: 1
+    replicas: 2
     port: 8080
     servicePort: 8080
     kind: java
@@ -93,7 +95,7 @@ services:
     env: {}
   balancereader:
     image: { name: balancereader, digest: "" }
-    replicas: 1
+    replicas: 2
     port: 8080
     servicePort: 8080
     kind: java
@@ -108,7 +110,7 @@ services:
       CACHE_SIZE: "1000000"
   transactionhistory:
     image: { name: transactionhistory, digest: "" }
-    replicas: 1
+    replicas: 2
     port: 8080
     servicePort: 8080
     kind: java
