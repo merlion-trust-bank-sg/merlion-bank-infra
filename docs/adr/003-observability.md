@@ -59,8 +59,8 @@ installed by **Argo CD** with pinned Helm chart versions:
 - **We operate it.** Single replicas mean a Prometheus or Alertmanager outage would also silence
   alerts. Mitigation: the Watchdog alert, which is expected to fire all the time; if it stops, the
   alert path is broken.
-- **Node capacity:** the stack needs roughly one extra `t3.medium` in prod (DOC-05 assumes 4 nodes).
-  Mitigation: resource requests and limits; scale the node group if it's short.
+- **Node capacity:** the stack takes about a node's worth of pod slots; each env runs 5 `t3.medium`
+  nodes so every pod still fits after losing one (DOC-05). Mitigation: resource requests and limits.
 - **Nightly cleanup:** staging is rebuilt daily, so staging monitoring history is short-lived. Prod
   history and the Loki bucket need to survive rebuilds.
 - **ALB metrics come from CloudWatch** through YACE, so they arrive about a minute late and each

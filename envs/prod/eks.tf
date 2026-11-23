@@ -24,14 +24,12 @@ module "eks" {
   public_access_cidrs = ["0.0.0.0/0"]
 
   # The training account only allows t2.micro, t3.micro, t3.medium and t4g.large (see envs/staging).
-  # 4 nodes across both AZs, as in staging: a t3.medium holds at most 17 pods, and the platform,
-  # monitoring and the bank need ~50 of them, so 3 nodes would be nearly full and losing one would
-  # leave pods unscheduled. desired_size only applies when the node group is created; min_size is what
-  # makes an existing group scale up.
+  # 5 nodes across both AZs, as in staging: a t3.medium holds at most 17 pods, so 5 leave room for
+  # every pod after losing any one node.
   node_instance_types = ["t3.medium"]
-  node_min_size       = 4
-  node_desired_size   = 4
-  node_max_size       = 5
+  node_min_size       = 5
+  node_desired_size   = 5
+  node_max_size       = 6
 
   logs_kms_key_arn = module.logs_key[0].arn
 

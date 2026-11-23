@@ -8,17 +8,17 @@ Explorer aren't available in the training account (README, Cost controls).
 ## Summary
 | Scope | Monthly (USD) | Notes |
 |---|---:|---|
-| **Production** (when on) | **≈ 538** | Table 1. Off by default (`enabled = false` in `envs/prod`): USD 0 while torn down. ≈ 32 of it is the monitoring stack, which prod doesn't have yet |
+| **Production** (when on) | **≈ 571** | Table 1. Off by default (`enabled = false` in `envs/prod`): USD 0 while torn down. ≈ 32 of it is the monitoring stack, which prod doesn't have yet |
 | **Shared** (state, audit trail, ECR) | **≈ 10** | Table 2, trail records write events only (ADR-004) |
-| **Staging** (≈ 220 h/month) | **≈ 107** | Table 3; ≈ 338 if left on 24/7 |
-| **Total** | **≈ 655** | ≈ 117 while prod is off |
+| **Staging** (≈ 220 h/month) | **≈ 116** | Table 3; ≈ 368 if left on 24/7 |
+| **Total** | **≈ 697** | ≈ 126 while prod is off |
 
 ## 1. Production
 | Item | Sizing / assumption | Unit price | Monthly |
 |---|---|---|---:|
 | EKS control plane | 1 cluster, standard support | $0.10 / h | 73.00 |
-| Worker nodes | 4 × `t3.medium` (6 services, `frontend` ≥ 2 replicas, Argo CD, LB Controller, External Secrets, monitoring stack) | $0.0416 / h each | 121.47 |
-| Node root volumes | 4 × 30 GB gp3 | $0.08 / GB-mo | 9.60 |
+| Worker nodes | 5 × `t3.medium` (6 services × 2 replicas, `frontend` 2–4 with HPA, Argo CD, LB Controller, External Secrets, monitoring stack). Pod slots (17 per node) are the limit: 5 leave room for every pod after losing one node | $0.0416 / h each | 151.84 |
+| Node root volumes | 5 × 30 GB gp3 | $0.08 / GB-mo | 12.00 |
 | Prometheus volume | 20 GiB gp3 (EBS PV, 15-day retention) | $0.08 / GB-mo | 1.60 |
 | Loki volume | 10 GiB gp3 (single binary; chunks themselves are in S3) | $0.08 / GB-mo | 0.80 |
 | RDS instances | 2 × `db.t4g.small` PostgreSQL, **Multi-AZ** | $0.065 / h each | 94.90 |
@@ -37,7 +37,7 @@ Explorer aren't available in the training account (README, Cost controls).
 | YACE (CloudWatch API) | ≈ 10 ALB metrics every 60 s ≈ 440,000 metrics | $0.01 / 1,000 metrics | 4.38 |
 | Grafana's own ALB | 1 ALB, very little traffic, plus its 2 public IPv4 addresses. Kept apart from the bank's ALB so its traffic isn't counted in the SLIs (#49) | $0.0225 / h + 2 × $0.005 / h | 24.00 |
 | EKS audit log copy (Firehose) | ≈ 3 million audit events, billed in 5 KB steps ≈ 15 GB; GZIP copies in the audit bucket ≈ 1 GB a month (#40) | $0.029 / GB + S3 | 1.00 |
-| **Total** | | | **≈ 538** |
+| **Total** | | | **≈ 571** |
 
 The monitoring rows (Prometheus and Loki volumes, Loki chunks, YACE and Grafana's ALB, ≈ 32 a month)
 apply once prod gets the same monitoring stack as staging; `deploy/platform/prod/` doesn't have it
@@ -81,7 +81,7 @@ history; ADR-004 lists this as a risk, and `include_read_management_events = tru
 on (cost as in the first row).
 
 ## 3. Staging
-Same modules, smaller: 4 × `t3.medium` (as prod, for pod capacity), 2 × `db.t4g.small`
+Same modules, smaller: 5 × `t3.medium` (as prod, for pod capacity), 2 × `db.t4g.small`
 **single-AZ**, 1 NAT gateway, no interface endpoints. The estimate assumes staging runs about 10
 hours a day on working days (≈ 220 hours a month). The nightly teardown's schedule has been disabled
 since 15 Nov, so until the SRE sets a new one, the 24/7 column applies.
@@ -89,21 +89,21 @@ since 15 Nov, so until the SRE sets a new one, the 24/7 column applies.
 | Item | Per hour | ≈ 220 h | 24/7 (730 h) |
 |---|---:|---:|---:|
 | EKS control plane | 0.100 | 22.00 | 73.00 |
-| 4 × `t3.medium` | 0.166 | 36.61 | 121.47 |
+| 5 × `t3.medium` | 0.208 | 45.76 | 151.84 |
 | 2 × `db.t4g.small` single-AZ | 0.064 | 14.08 | 46.72 |
 | 1 NAT gateway | 0.045 | 9.90 | 32.85 |
 | 3 public IPv4 (NAT + ALB) | 0.015 | 3.30 | 10.95 |
 | ALB (≈ 1 LCU) | 0.031 | 6.71 | 22.27 |
 | Grafana's ALB and its 2 public IPv4 addresses | 0.033 | 7.26 | 24.00 |
 | Storage, logs, keys, secrets, audit log copy (Firehose) | – | ≈ 7.00 | ≈ 7.00 |
-| **Total** | **≈ 0.45** | **≈ 107** | **≈ 338** |
+| **Total** | **≈ 0.50** | **≈ 116** | **≈ 368** |
 
 ## 4. Cost levers (NFR-7)
 | Lever | Saving | Trade-off |
 |---|---:|---|
-| Prod off by default (`enabled = false`), **on since 19 Nov for testing and the demo** | ≈ 538 / month while off | Bringing prod up is a reviewed PR plus a production approval |
+| Prod off by default (`enabled = false`), **on since 19 Nov for testing and the demo** | ≈ 571 / month while off | Bringing prod up is a reviewed PR plus a production approval |
 | CloudTrail write events only, **in use** | ≈ 35–235 / month | Read events only in the account's trail (ADR-004) |
-| Staging torn down when idle (INF-18), **schedule disabled since 15 Nov** | ≈ 231 / month vs 24/7 | Start-up time (about 30 minutes) before testing |
+| Staging torn down when idle (INF-18), **schedule disabled since 15 Nov** | ≈ 252 / month vs 24/7 | Start-up time (about 30 minutes) before testing |
 | Grafana behind the bank's ALB (one ingress group) | ≈ 24 / month per environment | Grafana's traffic would be counted in the bank's SLIs, and moving the bank's Ingress into a group replaces its ALB (#49) |
 | No interface endpoints in prod | ≈ 73 / month | ECR, STS, Secrets Manager and Logs traffic goes through NAT (paid per GB) and leaves the VPC |
 | One NAT gateway in prod | ≈ 37 / month (gateway + its IPv4 address) | An AZ outage cuts egress for the other AZ (NFR-3) |

@@ -69,9 +69,9 @@ met in `us-east-1`.
 
 | ID | Target | How it's met | Evidence | Status |
 |---|---|---|---|---|
-| NFR-1 | 99.9% availability | Nodes in 2 AZs; `frontend` HPA 2–4 replicas with a PDB and AZ spread; Multi-AZ RDS and a NAT gateway per AZ in prod | SLO panel and burn-rate alert | ✅ design · ⏳ SLO rules and alerts (APP-14, INF-17, #58) |
+| NFR-1 | 99.9% availability | Nodes in 2 AZs; every service 2+ replicas with a PDB and AZ spread (`frontend` HPA 2–4); Multi-AZ RDS and a NAT gateway per AZ in prod | SLO panel and burn-rate alert | ✅ design · ⏳ SLO rules and alerts (APP-14, INF-17, #58) |
 | NFR-2 | p95 < 500 ms | ALB `TargetResponseTime` p95 through YACE into Prometheus | SLO panel and latency alert | ✅ metric (staging) · ⏳ SLO and alert (#58) |
-| NFR-3 | Survive one AZ | 2 AZs; 4 × `t3.medium` (pod capacity left after losing a node, #37); NAT per AZ; Multi-AZ RDS (`envs/prod`) | `describe-db-instances` `MultiAZ: true`, nodes in both AZs | ✅ prod running (#44): both databases Multi-AZ, 4 nodes across `us-east-1a` and `us-east-1b` (21 Nov) |
+| NFR-3 | Survive one AZ | 2 AZs; 5 × `t3.medium` (room for every pod after losing a node); every service 2+ replicas spread over both AZs; NAT per AZ; Multi-AZ RDS (`envs/prod`) | `describe-db-instances` `MultiAZ: true`, nodes in both AZs | ✅ prod running (#44): both databases Multi-AZ, 4 nodes across `us-east-1a` and `us-east-1b` (21 Nov) |
 | NFR-4 | RPO ≤ 24 h, RTO ≤ 4 h | RDS automated backups (7 days, point-in-time restore), deletion protection and dated final snapshots in prod | Backup config; a timed restore | ✅ backups · ⏳ restore test |
 | NFR-5 | Baseline load, `frontend` ≥ 2 with HPA | HPA 2–4 at 70% CPU, metrics-server add-on; load generator in staging only | `kubectl -n bank get hpa frontend` | ✅ |
 | NFR-6 | Encryption at rest and in transit; DBs not public | Our own KMS keys for EKS secrets, RDS, Secrets Manager (app secrets), logs, Loki's bucket, state and audit; HTTPS on the ALB (ACM, `ELBSecurityPolicy-TLS13-1-2-2021-06`: TLS 1.2 and 1.3, HTTP → HTTPS redirect); RDS `rds.force_ssl`; isolated DB subnets with no internet route, `publicly_accessible = false`. Exceptions below | Resource configs; `curl -I http://…` redirects to HTTPS | ✅ |

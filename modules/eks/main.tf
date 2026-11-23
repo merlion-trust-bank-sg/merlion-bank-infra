@@ -117,6 +117,8 @@ resource "aws_eks_node_group" "default" {
     version = aws_launch_template.node.latest_version
   }
 
+  # No ignore_changes on desired_size: without a cluster autoscaler, the node count is set here and
+  # changed through the pipeline like everything else. Add it back if an autoscaler is installed.
   scaling_config {
     min_size     = var.node_min_size
     desired_size = var.node_desired_size
@@ -128,11 +130,6 @@ resource "aws_eks_node_group" "default" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.this]
-
-  lifecycle {
-    # Leave room for a cluster autoscaler to change the count later without Terraform reverting it
-    ignore_changes = [scaling_config[0].desired_size]
-  }
 }
 
 # EKS creates the node group's Auto Scaling group itself and doesn't copy our tags onto it, so tag it
