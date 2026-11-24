@@ -1,5 +1,6 @@
 # "App of apps": Argo CD reads deploy/platform/staging from main and creates every resource in it.
-# The repo is public, so no credentials are needed and the cluster has no access to GitHub.
+# Argo CD reads the repo with the org's read-only GitHub App (repo-creds.yaml), so it works whether the
+# repo is public or private. Pull-based: Argo CD fetches from GitHub; GitHub has no access to the cluster.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
