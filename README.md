@@ -91,10 +91,20 @@ security group, and the node group's Auto Scaling group. The roles can be assume
 fails with 403 on the state bucket, nodes can't join, the add-ons lose AWS access.
 
 **Normally, the pipeline restores it** (`.github/workflows/restore.yml`). The restore role is stripped
-too, and a role without permissions can't give itself any, so one person does one step first:
+too, and a role without permissions can't give itself any, so one person does one step first.
+`scripts/restore.sh` does that step (only if the policy is missing), starts the workflow on `main`
+and follows the run:
 
 ```bash
 # An admin, your own profile for account 255945442255
+AWS_PROFILE=<your profile> scripts/restore.sh                     # staging
+AWS_PROFILE=<your profile> scripts/restore.sh prod                # waits for the production approval
+AWS_PROFILE=<your profile> scripts/restore.sh staging "<reason>"  # if it isn't the nightly cleanup
+```
+
+By hand, the same is:
+
+```bash
 aws iam attach-role-policy --role-name g4-merlion-ci-restore \
   --policy-arn arn:aws:iam::255945442255:policy/g4-merlion-ci-restore
 gh workflow run restore --repo merlion-trust-bank-sg/merlion-bank-infra --ref main -f environment=staging
