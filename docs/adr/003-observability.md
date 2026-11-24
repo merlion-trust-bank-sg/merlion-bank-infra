@@ -33,7 +33,8 @@ installed by **Argo CD** with pinned Helm chart versions:
 - **YACE** (Yet Another CloudWatch Exporter) with a read-only Pod Identity role, to bring the ALB's
   CloudWatch metrics (`HTTPCode_Target_5XX_Count`, `RequestCount`, `TargetResponseTime`) into
   Prometheus for the SLOs.
-- **Alertmanager** routes to email and Telegram (INF-16). Alert text carries metric names and
+- **Alertmanager** routes to the team's Telegram group (INF-16); email is ready in the config but
+  switched off. Alerts carry an `environment` label, so staging and prod can share the group. Alert text carries metric names and
   thresholds only, never customer data. A **Watchdog** alert proves the alert path itself works.
 - Dashboards and alert rules are provisioned from code (JSON dashboards, `PrometheusRule`
   objects), so every change goes through a PR.
@@ -61,15 +62,19 @@ installed by **Argo CD** with pinned Helm chart versions:
   alert path is broken.
 - **Node capacity:** the stack takes about a node's worth of pod slots; each env runs 5 `t3.medium`
   nodes so every pod still fits after losing one (DOC-05). Mitigation: resource requests and limits.
-- **Nightly cleanup:** staging is rebuilt daily, so staging monitoring history is short-lived. Prod
-  history and the Loki bucket need to survive rebuilds.
+- **Rebuilds:** monitoring history on cluster volumes is lost when an environment is torn down
+  (staging's nightly teardown schedule has been disabled since 15 Nov). Logs survive in the Loki
+  bucket; prod's bucket can't be force-deleted, so a prod teardown needs it emptied by hand (#65).
 - **ALB metrics come from CloudWatch** through YACE, so they arrive about a minute late and each
   scrape costs CloudWatch API calls (≈ USD 4 a month, DOC-05).
 - **Retention:** Prometheus keeps short-term metrics on its volume (e.g. 15 days); long-term
   evidence is the 365-day logs in Loki and the audit trail (ADR-004).
 
-## Evidence (to be completed in INF-15 to INF-17)
-- Argo CD Applications for the stack in `deploy/platform/<env>/`, `Synced` / `Healthy`
-- Loki bucket in `us-east-1`, KMS-encrypted, lifecycle and compactor retention 365 days
-- Grafana dashboard showing SLO status and logs per service
-- A test alert (and the Watchdog) delivered to email and Telegram
+## Evidence
+- Argo CD Applications for the stack in `deploy/platform/staging/` (#25) and `deploy/platform/prod/` (#65)
+- Loki buckets `g4-merlion-staging-loki` and `g4-merlion-prod-loki` in `us-east-1`, KMS-encrypted,
+  compactor retention 365 days
+- Grafana dashboard "is the system healthy?" as the home page, with SLO status and logs per service
+  (#58, #63): https://grafana.merlion.sctp-sandbox.com and https://grafana.merlion-staging.sctp-sandbox.com
+- Live alert in the staging rehearsal on 23 Nov: `BankServiceDown` and `BankAvailabilityFastBurn`
+  delivered to Telegram, then RESOLVED (merlion-bank-app #9); Watchdog every 12 hours

@@ -48,7 +48,8 @@ by **Argo CD** from `merlion-bank-infra` (GitOps, ADR-007). Pods that call AWS u
 - Cluster access must be controlled: EKS access entries map only pipeline roles and named admins.
 
 ## Evidence
-- `modules/eks/` (INF-06, PR #17): cluster, managed node group (3 × `t3.medium`, the largest x86 type
-  the training account allows), add-ons, access entries, Pod Identity
+- `modules/eks/` (INF-06, PR #17): cluster, managed node group, add-ons, access entries, Pod Identity.
+  The node group is 5 × `t3.medium` per env (#62), the largest x86 type the training account allows;
+  pod slots (17 per node), not CPU, set the count, so every pod still fits after losing one node.
 - `modules/addons/` and `deploy/` (INF-14, PR #19): Pod Identity roles, Argo CD and its add-ons
-- To add from a pipeline-built cluster: `kubectl get nodes` showing nodes in `us-east-1a` and `us-east-1b`
+- Prod on 24 Nov: 5 nodes, 2 in `us-east-1a` and 3 in `us-east-1b` (`aws ec2 describe-instances`)

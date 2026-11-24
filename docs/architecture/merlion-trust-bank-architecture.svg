@@ -72,12 +72,13 @@
 <text class="s" x="30" y="645">g4-merlion-ci-build / -plan / -prod-plan (read-only)</text>
 <text class="s" x="30" y="665">-staging / -prod: own env only; prod after approval</text>
 <text class="s" x="30" y="685">-record: adds deploy records to the audit bucket</text>
-<text class="s" x="30" y="703">break-glass: one named admin, restores recorded</text>
+<text class="s" x="30" y="703">-restore: re-attaches CI policies after cleanup</text>
+<text class="s" x="30" y="721">break-glass: one named admin, restores recorded</text>
 
-<text class="m" x="30" y="733" font-size="12">NOTE</text>
-<text class="s" x="30" y="753">CI run logs are stored by GitHub,</text>
-<text class="s" x="30" y="771">outside AWS. Keep customer data</text>
-<text class="s" x="30" y="789">and app logs out of CI output.</text>
+<text class="m" x="30" y="751" font-size="12">NOTE</text>
+<text class="s" x="30" y="771">CI run logs are stored by GitHub,</text>
+<text class="s" x="30" y="789">outside AWS. Keep customer data</text>
+<text class="s" x="30" y="807">and app logs out of CI output.</text>
 
 <rect class="box" x="30" y="900" width="300" height="58" rx="4"/>
 <text class="t" x="45" y="924">On-call engineer</text>
@@ -100,7 +101,7 @@
 
 <!-- EKS private subnets -->
 <rect class="band" x="400" y="268" width="740" height="292"/>
-<text class="t" x="560" y="292">Amazon EKS · private subnets · 4 × t3.medium</text>
+<text class="t" x="560" y="292">Amazon EKS · private subnets · 5 × t3.medium</text>
 <text class="s" x="560" y="312">Argo CD installs: LB Controller · External Secrets · monitoring (Pod Identity)</text>
 <text class="m" x="1132" y="292" text-anchor="end">pull · secrets</text>
 <line class="arr" x1="545" y1="240" x2="545" y2="398" marker-end="url(#a)"/>
@@ -199,7 +200,7 @@
 
 <rect class="frame" x="380" y="740" width="780" height="300" rx="4"/>
 <text class="t" x="395" y="765">Observability · self-hosted on EKS in us-east-1, no third-party SaaS</text>
-<text class="pl" x="1145" y="765" text-anchor="end">STAGING NOW · PROD PLANNED</text>
+<text class="pl" x="1145" y="765" text-anchor="end">STAGING AND PROD</text>
 <rect class="box" x="400" y="790" width="172" height="70" rx="4"/>
 <text class="t" x="412" y="812">Loki + Alloy</text>
 <text class="s" x="412" y="832">logs from all pods</text>
@@ -215,7 +216,7 @@
 <rect class="red" x="961" y="790" width="172" height="70" rx="4"/>
 <text class="t" x="973" y="812">Alertmanager</text>
 <text class="s" x="973" y="832">routes to Telegram</text>
-<text class="s" x="973" y="850">SLO rules <tspan class="pl">PLANNED</tspan></text>
+<text class="s" x="973" y="850">SLO + burn-rate rules</text>
 
 <text class="s" x="400" y="900">SLIs: availability = 1 − ALB 5xx ratio (SLO 99.9%)</text>
 <text class="s" x="400" y="920">latency = p95 ALB target response time (SLO &lt; 500 ms)</text>
@@ -244,5 +245,5 @@
 
 <!-- Footer -->
 <line x1="0" y1="1068" x2="1600" y2="1068" stroke="#D5D9DD" stroke-width="1"/>
-<text class="s" x="20" y="1088"><tspan fill="#B8323A" font-weight="600">Red</tspan> marks the us-east-1 data boundary and every point where a credential or approval controls access to production. <tspan fill="#2F7E7A" font-weight="600">Teal</tspan> boxes are the six Bank of Anthos services. <tspan fill="#7A5C00" font-weight="600">Dashed grey / PLANNED</tspan>: not built yet.</text>
+<text class="s" x="20" y="1088"><tspan fill="#B8323A" font-weight="600">Red</tspan> marks the us-east-1 data boundary and every point where a credential or approval controls access to production. <tspan fill="#2F7E7A" font-weight="600">Teal</tspan> boxes are the six Bank of Anthos services. <tspan fill="#7A5C00" font-weight="600">Yellow labels</tspan>: what runs where.</text>
 </svg>
