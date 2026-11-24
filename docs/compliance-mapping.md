@@ -38,8 +38,8 @@ met in `us-east-1`.
 | 3. Review | An approver other than the author, after the last push | Ruleset: required approval, `require_last_push_approval` | ✅ |
 | 4. Pipeline run | Which run changed what, with which role | `tf-apply.yml`: staging applied, then prod planned with the read-only role; AWS session name `ci-<run id>-<attempt>` | ✅ |
 | 5. Production approval | Who approved the saved prod plan | GitHub environment `production`: required reviewers, **prevent self-review** | ✅ |
-| 6. App deploys | The promotion PR and its approver; image digests signed by our cd and equal to staging's | `promotion.yml` (`pull_request_target`, from `main`), `verify-provenance.py`, ADR-007 | ✅ |
-| 7. Deploy record | `{actor, approvers, PR, commit, digests or plan, env, time}` in the Object Lock bucket | `deploy-record.yml`, role `g4-merlion-ci-record` (APP-11, #48); break-glass restores add their own record (#59) | ✅ first prod record on 20 Nov (`deploys/prod/2026-11-20T140946Z-app-deploy-…`) |
+| 6. App deploys | The promotion PR and its approver; image digests signed by our cd and equal to staging's | `app-image-promote-checks.yml` (`pull_request_target`, from `main`), `verify-provenance.py`, ADR-007 | ✅ |
+| 7. Deploy record | `{actor, approvers, PR, commit, digests or plan, env, time}` in the Object Lock bucket, for every app deploy, terraform apply and pipeline restore that changed staging or prod | `deploy-record.yml`, role `g4-merlion-ci-record` (APP-11, #48); break-glass restores add their own record (#59) | ✅ first prod record on 20 Nov (`deploys/prod/2026-11-20T140946Z-app-deploy-…`) |
 | 8. CloudTrail | Every write API call, by role and `ci-<run id>` session | Trail `g4-merlion-trail` (write management events + audit-bucket data events), ADR-004 | ✅ |
 | 9. Kubernetes changes | Every API server request (who, verb, object) | EKS audit log in CloudWatch (365 days); copy to the Object Lock bucket via Firehose (#40) | ✅ |
 

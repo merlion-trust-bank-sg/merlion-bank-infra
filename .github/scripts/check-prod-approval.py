@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that a prod promotion PR is approved by someone other than whoever ran promote-prod.
+"""Check that a prod promotion PR is approved by someone other than whoever ran app-image-promote-prod.
 
 Usage: check-prod-approval.py <head ref>
 Environment: GH_TOKEN (actions: read, pull-requests: read), GITHUB_REPOSITORY, PR, HEAD_SHA, HEAD_REF
@@ -7,14 +7,14 @@ Environment: GH_TOKEN (actions: read, pull-requests: read), GITHUB_REPOSITORY, P
 GitHub's own rules can't express this: the promotion PR is opened and pushed by the promotion App,
 so "the last pusher can't approve" compares approvers with the App, not with the person who clicked
 Promote to prod. So this check:
-  1. reads the promote-prod run that made the PR's head commit (its "Promotion-run: <id>" trailer;
+  1. reads the app-image-promote-prod run that made the PR's head commit (its "Promotion-run: <id>" trailer;
      only the App can push promote/prod, and if someone else pushed, GitHub already stops them
      approving their own push);
-  2. confirms that run is promote-prod.yml, started by hand on main in this repo, and takes who
+  2. confirms that run is app-image-promote-prod.yml, started by hand on main in this repo, and takes who
      started it (and who re-ran it, if anyone);
   3. passes only if someone else, a person, has approved the PR's current head commit and hasn't
      since requested changes.
-It re-runs whenever a review is submitted or dismissed (promotion-review.yml).
+It re-runs whenever a review is submitted or dismissed (app-image-promote-checks-retrigger-on-pr-review.yml).
 """
 import json
 import os
@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.request
 
-PROMOTE_WORKFLOW = ".github/workflows/promote-prod.yml"
+PROMOTE_WORKFLOW = ".github/workflows/app-image-promote-prod.yml"
 BRANCH = "promote/prod"
 
 
@@ -62,12 +62,12 @@ def promotion_run_id(message):
 
 
 def runners(repo, run_id):
-    """Who started (and re-ran) the promote-prod run, after checking it really is one."""
+    """Who started (and re-ran) the app-image-promote-prod run, after checking it really is one."""
     run = api(f"repos/{repo}/actions/runs/{run_id}")
     path = run.get("path", "").split("@")[0]
     if (run.get("repository", {}).get("full_name") != repo or path != PROMOTE_WORKFLOW
             or run.get("event") != "workflow_dispatch" or run.get("head_branch") != "main"):
-        sys.exit(f"Run {run_id} isn't a promote-prod run started by hand on main; can't tell who promoted")
+        sys.exit(f"Run {run_id} isn't an app-image-promote-prod run started by hand on main; can't tell who promoted")
     return {u["login"] for u in (run.get("actor"), run.get("triggering_actor")) if u}
 
 
@@ -87,18 +87,18 @@ def approvers(repo, pr, head_sha):
 def main(head_ref):
     repo, pr, head_sha = os.environ["GITHUB_REPOSITORY"], os.environ["PR"], os.environ["HEAD_SHA"]
     if os.environ.get("HEAD_REF") != BRANCH:
-        sys.exit(f"A prod promotion must come from {BRANCH} (Actions -> promote-prod -> Run workflow)")
+        sys.exit(f"A prod promotion must come from {BRANCH} (Actions -> app-image-promote-prod -> Run workflow)")
 
     run_id = promotion_run_id(commit_message(head_ref))
     if not run_id:
-        sys.exit("The head commit has no Promotion-run trailer; open prod promotions with promote-prod")
+        sys.exit("The head commit has no Promotion-run trailer; open prod promotions with app-image-promote-prod")
 
     ran_it = runners(repo, run_id)
     others = approvers(repo, pr, head_sha) - ran_it
     if not others:
         sys.exit(f"Needs an approval of {head_sha[:7]} from someone other than {', '.join(sorted(ran_it))} "
-                 f"(who ran promote-prod run {run_id}). This check re-runs when a review is submitted.")
-    print(f"OK: approved by {', '.join(sorted(others))}; promote-prod run {run_id} was run by "
+                 f"(who ran app-image-promote-prod run {run_id}). This check re-runs when a review is submitted.")
+    print(f"OK: approved by {', '.join(sorted(others))}; app-image-promote-prod run {run_id} was run by "
           f"{', '.join(sorted(ran_it))}")
 
 
