@@ -50,8 +50,8 @@ reviewed and merged like any change. Nobody changes the cluster by hand (HC-2).
 
 ## Prod specifics
 
-- **Staging still runs the bad version** after a prod rollback, so **don't run promote-prod again**
-  until a fix has gone through staging. promote-prod copies staging's digests.
+- **Staging still runs the bad version** after a prod rollback, so **don't run app-image-promote-prod again**
+  until a fix has gone through staging. app-image-promote-prod copies staging's digests.
 
 ## Don't
 

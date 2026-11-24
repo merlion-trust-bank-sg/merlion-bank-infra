@@ -47,7 +47,7 @@ variable "import_eks_log_group" {
     that tears prod down.
   EOT
   type        = bool
-  default     = false
+  default     = true
 
   validation {
     condition     = !var.import_eks_log_group || var.enabled

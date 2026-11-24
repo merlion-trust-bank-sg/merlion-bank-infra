@@ -13,5 +13,6 @@ configs:
     timeout.reconciliation: 30s
     timeout.reconciliation.jitter: 10s
   params:
-    # Reached with kubectl port-forward for now; TLS comes with the ALB in front of it
+    # Not exposed: reached only with kubectl port-forward, whose connection is already encrypted by the
+    # Kubernetes API. Plain HTTP avoids self-signed certificate warnings.
     server.insecure: true

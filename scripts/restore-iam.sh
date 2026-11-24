@@ -13,9 +13,11 @@
 # If the JWT secret got a new version, it then refreshes the Kubernetes Secrets and restarts the app.
 # Before the env plan it also puts back the EKS cluster security group's rules (not in Terraform).
 #
-# Prod is restored the same way, by the break-glass holder only: the cleanup strips the pipeline's own
-# roles, so the pipeline can't restore prod. It asks for the reason, and writes a record of the run to
-# the Object Lock audit bucket (deploys/prod/), next to the pipeline's deploy records.
+# Prod is restored the same way, by the break-glass holder only. Normally the restore workflow does
+# both envs (.github/workflows/restore.yml, after one admin re-attaches g4-merlion-ci-restore's
+# policy); this script is the fallback when that can't run, e.g. the restore role or its policy is
+# gone. It asks for the reason, and writes a record of the run to the Object Lock audit bucket
+# (deploys/prod/), next to the pipeline's deploy records.
 #
 # If bootstrap itself is gone (state bucket missing), use scripts/rebuild-bootstrap.sh instead.
 #

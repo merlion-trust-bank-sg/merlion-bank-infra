@@ -5,6 +5,7 @@
 #   ci-record   infra repo, main, no environment   add deploy records to the audit bucket, nothing else
 #   ci-staging  infra repo, environment staging    change staging only
 #   ci-prod     infra repo, environment production, after a reviewer approves   change prod only
+#   ci-restore  infra repo, main, no environment   re-attach the CI roles' own policies, nothing else
 
 locals {
   # GitHub's immutable subject format: repo:<org>@<org id>/<repo>@<repo id>. The IDs stop a deleted
@@ -25,6 +26,8 @@ locals {
       prod_plan = ["${local.sub_prefix[var.infra_repo]}:ref:refs/heads/main"]
       # Same kind of job (merged code on main, no environment); can only add deploy records
       record = ["${local.sub_prefix[var.infra_repo]}:ref:refs/heads/main"]
+      # Same again (.github/workflows/restore.yml): it can only put back what's already defined here
+      restore = ["${local.sub_prefix[var.infra_repo]}:ref:refs/heads/main"]
     },
   )
 }

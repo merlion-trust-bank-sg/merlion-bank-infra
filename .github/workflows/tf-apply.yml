@@ -40,11 +40,19 @@ jobs:
           role: g4-merlion-ci-staging
           workdir: envs/staging
 
+      # -detailed-exitcode: 0 = no changes, 2 = changes, 1 = error. As for prod, the apply (and so the
+      # deploy record, deploy-record.yml) only happens when something changes.
       - name: Terraform plan (staging)
+        id: plan
         working-directory: envs/staging
-        run: terraform plan -lock-timeout=5m -out=staging.tfplan
+        run: |
+          code=0
+          terraform plan -lock-timeout=5m -detailed-exitcode -out=staging.tfplan || code=$?
+          [ "$code" -eq 1 ] && exit 1
+          echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Terraform apply (staging)
+        if: steps.plan.outputs.changes == 'true'
         working-directory: envs/staging
         run: terraform apply -lock-timeout=5m staging.tfplan
 

@@ -5,9 +5,10 @@ Usage:
   deploy-record.py app <commit sha> <before sha> <out dir>
       A push to main. Writes one record per environment whose deploy/values-<env>.yaml changed
       between <before sha> and <commit sha>: an application deploy (Argo CD syncs that commit).
-  deploy-record.py apply <tf-apply run id> <out dir>
-      A finished tf-apply run. Writes a record for prod if its "apply prod" job succeeded: a
-      production terraform apply, with who approved it.
+  deploy-record.py apply <tf-apply or restore run id> <out dir>
+      A finished tf-apply or restore run. Writes one record per environment the run changed (see
+      APPLIES): a terraform apply (or restore, with its reason), with who approved it. Prod's
+      approvers are the production environment's; staging's are the PR's (no environment approval).
 
 Each record is one JSON file, {actor, approver, PR, commit SHA, image digests or plan, env,
 timestamp}, named <env>/<UTC time>-<kind>-<short sha>-<run id>-<attempt>.json under <out dir>. The
@@ -31,6 +32,23 @@ SECTION = re.compile(r"^\s*([a-zA-Z][a-zA-Z0-9-]*):\s*(?:#.*)?$")
 INLINE = re.compile(r'^\s*([a-zA-Z][a-zA-Z0-9-]*):\s*\{.*digest:\s*"(sha256:[0-9a-f]{64})"')
 DIGEST = re.compile(r'digest:\s*"(sha256:[0-9a-f]{64})"')
 APP_COMMIT = re.compile(r"merlion-bank-app commit ([0-9a-f]{7,40})")
+
+# Which job (and, if set, which step in it) shows that a run changed an environment. Must match the
+# job and step names in the workflows.
+#   tf-apply  apply staging: its apply step runs only when the plan has changes
+#             apply prod: runs only when the prod plan has changes, after the production approval
+#   restore   restore staging: the repair step runs only when the cluster exists
+#             apply prod: runs only when prod exists, after the production approval
+APPLIES = {
+    "tf-apply.yml": [
+        ("staging", "apply staging", "Terraform apply (staging)"),
+        ("prod", "apply prod", None),
+    ],
+    "restore.yml": [
+        ("staging", "restore staging", "Refresh secrets, restart the bank, health check"),
+        ("prod", "apply prod", None),
+    ],
+}
 
 
 def gh(path):
@@ -153,39 +171,60 @@ def apply_records(run_id, out_dir):
     if run["head_branch"] != "main":
         print(f"Run {run_id} is on {run['head_branch']}, not main: nothing to record")
         return
+    workflow = run["path"].rsplit("/", 1)[-1]
     jobs = gh(f"repos/{REPO}/actions/runs/{run_id}/jobs")
     jobs = jobs["jobs"] if isinstance(jobs, dict) else [j for page in jobs for j in page["jobs"]]
-    applied = [j for j in jobs if j["name"] == "apply prod" and j["conclusion"] == "success"]
-    if not applied:
-        print(f"Run {run_id}: apply prod didn't run or didn't succeed, nothing to record")
+    changed = []
+    for env, job_name, step_name in APPLIES.get(workflow, []):
+        for job in jobs:
+            if job["name"] != job_name or job["conclusion"] != "success":
+                continue
+            if step_name is None:
+                changed.append((env, job["completed_at"]))
+                continue
+            step = next((s for s in job.get("steps", []) if s["name"] == step_name), None)
+            if step and step["conclusion"] == "success":
+                changed.append((env, step["completed_at"]))
+    if not changed:
+        print(f"Run {run_id}: no environment was changed, nothing to record")
         return
-    approvals = [
-        {"user": a["user"]["login"], "state": a["state"], "comment": a.get("comment") or ""}
-        for a in gh(f"repos/{REPO}/actions/runs/{run_id}/approvals")
-        if any(e.get("name") == "production" for e in a.get("environments", []))
-    ]
-    approvers = sorted({a["user"] for a in approvals if a["state"] == "approved"})
-    if not approvers:
-        sys.exit(f"Run {run_id}: apply prod succeeded but no production approval was found")
+
+    approvals = gh(f"repos/{REPO}/actions/runs/{run_id}/approvals")
     sha = run["head_sha"]
     pr = pull_request(sha)
-    write(out_dir, {
-        "schema": "merlion-deploy-record/v1",
-        "kind": "infra-apply",
-        "environment": "prod",
-        "recorded_at": now(),
-        "commit": {"sha": sha, "url": f"{SERVER}/{REPO}/commit/{sha}"},
-        "pull_request": pr,
-        "actor": run["actor"]["login"],
-        "approvers": approvers,
-        "production_approvals": approvals,
-        "plan": {
-            "artifact": f"prod-tfplan-{sha}",
-            "apply_run_url": run["html_url"],
-            "applied_at": applied[0]["completed_at"],
-        },
-        "pipeline": pipeline(),
-    })
+    for env, applied_at in changed:
+        record = {
+            "schema": "merlion-deploy-record/v1",
+            "kind": "infra-apply",
+            "environment": env,
+            "recorded_at": now(),
+            "commit": {"sha": sha, "url": f"{SERVER}/{REPO}/commit/{sha}"},
+            "pull_request": pr,
+            "actor": run["actor"]["login"],
+            "plan": {"apply_run_url": run["html_url"], "applied_at": applied_at},
+            "pipeline": pipeline(),
+        }
+        if env == "prod":
+            # The reviewer approved exactly this saved plan (tf-apply / restore "plan prod")
+            env_approvals = [
+                {"user": a["user"]["login"], "state": a["state"], "comment": a.get("comment") or ""}
+                for a in approvals
+                if any(e.get("name") == "production" for e in a.get("environments", []))
+            ]
+            approvers = sorted({a["user"] for a in env_approvals if a["state"] == "approved"})
+            if not approvers:
+                sys.exit(f"Run {run_id}: apply prod succeeded but no production approval was found")
+            record["approvers"] = approvers
+            record["production_approvals"] = env_approvals
+            record["plan"]["artifact"] = f"prod-tfplan-{sha}"
+        else:
+            # Staging applies on merge, with no environment approval: the PR's review is the approval
+            record["approvers"] = pr["approvers"]
+        # A restore re-applies main after the nightly cleanup; its run name is "restore <env>: <reason>"
+        if workflow == "restore.yml":
+            record["kind"] = "infra-restore"
+            record["reason"] = run.get("display_title", "")
+        write(out_dir, record)
 
 
 if __name__ == "__main__":

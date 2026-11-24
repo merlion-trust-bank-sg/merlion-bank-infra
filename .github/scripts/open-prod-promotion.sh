@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Open (or update) the prod promotion PR: deploy/values-prod.yaml gets exactly the digests staging runs
-# on main. Run by promote-prod.yml, from a checkout of main.
+# on main. Run by app-image-promote-prod.yml, from a checkout of main.
 #
 #   1. copy the digests (copy-digests.py); if prod already runs them, close any stale PR and stop
 #   2. commit and force-push promote/prod (one open prod promotion at most)
@@ -56,7 +56,7 @@ body="Sets \`$TO\` to the digests staging runs on \`main\`, as of [${from_sha::7
 
 $smoke
 
-Opened by [promote-prod run $GITHUB_RUN_ID]($RUN_URL), started by @$GITHUB_ACTOR. **Needs an approval from someone else; merging it is the prod deploy** (Argo CD syncs prod within about a minute). The \`prod promotion only\` check confirms every digest equals staging's and was built and signed by merlion-bank-app's cd on \`main\`."
+Opened by [app-image-promote-prod run $GITHUB_RUN_ID]($RUN_URL), started by @$GITHUB_ACTOR. **Needs an approval from someone else; merging it is the prod deploy** (Argo CD syncs prod within about a minute). The \`prod promotion only\` check confirms every digest equals staging's and was built and signed by merlion-bank-app's cd on \`main\`."
 
 pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')"
 if [ -z "$pr" ]; then

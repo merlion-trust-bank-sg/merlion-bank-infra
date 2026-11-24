@@ -1,4 +1,4 @@
-# "Promote to prod" button: Actions -> promote-prod -> Run workflow. Opens (or updates) a PR that sets
+# "Promote to prod" button: Actions -> app-image-promote-prod -> Run workflow. Opens (or updates) a PR that sets
 # deploy/values-prod.yaml's digests to exactly the ones staging runs on main. It never merges: someone
 # other than whoever ran it approves the PR, and merging it is the prod deploy (Argo CD syncs prod).
 #
@@ -6,7 +6,7 @@
 # wouldn't trigger the required checks. The App has no bypass of any rule. The "prod promotion only"
 # check then confirms the PR changes only digests, each equal to staging's on main and signed by
 # merlion-bank-app's cd.
-name: promote-prod
+name: app-image-promote-prod
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ permissions:
 
 # One promotion at a time
 concurrency:
-  group: promote-prod
+  group: app-image-promote-prod
   cancel-in-progress: false
 
 env:

@@ -24,6 +24,7 @@ access until someone noticed.
 | `g4-merlion-ci-staging` | infra repo, `staging` Environment | change staging only |
 | `g4-merlion-ci-prod` | infra repo, `production` Environment (after a reviewer approves) | change prod only |
 | `g4-merlion-ci-record` | infra repo, `main`, no environment | add deploy records to the audit bucket (APP-11) |
+| `g4-merlion-ci-restore` | infra repo, `main`, no environment | re-attach the CI roles' own policies after the nightly cleanup, from a fixed list in its own policy |
 
 - **Exact subject, no wildcards.** Each trust policy matches the token's `sub` claim exactly, in
   GitHub's immutable format `repo:<org>@<org id>/<repo>@<repo id>:<context>`. The numeric IDs mean a
@@ -62,8 +63,13 @@ access until someone noticed.
   `bootstrap/variables.tf`.
 - Whoever administers the GitHub Environments (reviewers, branch rules) effectively controls who
   can deploy prod. Mitigation: org admins only; changes appear in the GitHub audit log.
-- The nightly cleanup in the training account strips the roles' policies; `bootstrap/` is
-  re-applied each morning. Not a security issue, but CI fails until then.
+- The nightly cleanup in the training account detaches every role's policies, the CI roles'
+  included, so CI fails each morning until they're back. Mitigation: the `restore` workflow
+  (`g4-merlion-ci-restore`) re-attaches them and repairs the environments through the normal
+  roles and approvals. It needs one manual step first: an admin re-attaches the restore role's own
+  policy, because a role with no permissions can't give itself any. The restore role can only
+  attach the policies listed in its own policy, so the CI roles' policies are all managed (the
+  cleanup keeps those) and it never writes policy content.
 
 ## Evidence
 - `modules/iam-ci/trust.tf`: subjects per role.
