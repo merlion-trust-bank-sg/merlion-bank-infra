@@ -4,7 +4,7 @@
   Revised 2026-11-16: Argo CD reads the repo with a read-only GitHub App and manages itself)
 - **Date:** 2026-11-13
 - **Deciders:** DevSecOps, reviewed by Solutions Architect and SRE
-- **Related:** FR-4, HC-2 (`docs/requirements.md`); ADR-005 (credentials); APP-10, APP-11; `merlion-bank-app` `cd.yml`, `.github/scripts/open-promotion-pr.sh`; `.github/workflows/promotion.yml`; `deploy/values-<env>.yaml`; `deploy/bootstrap/` (`bootstrap.sh`, `repo-creds.yaml`, `put-argocd-github-app.sh`)
+- **Related:** FR-4, HC-2 (`docs/requirements.md`); ADR-005 (credentials); APP-10, APP-11; `merlion-bank-app` `cd.yml`, `.github/scripts/open-promotion-pr.sh`; `.github/workflows/app-image-promote-checks.yml`; `deploy/values-<env>.yaml`; `deploy/bootstrap/` (`bootstrap.sh`, `repo-creds.yaml`, `put-argocd-github-app.sh`)
 
 ## Context
 Changes must reach production only through an automated pipeline with an approval step (FR-4),
@@ -39,7 +39,7 @@ know an image being promoted is one our pipeline built.
   required checks. It can push `promote/**` branches and open PRs; it never merges.
 - **Prod: the same digests, also approved.** A promotion PR copies the digests staging runs into
   `deploy/values-prod.yaml`; merging it is the prod deploy.
-- **What a promotion PR may contain** (required checks, `promotion.yml`, run from `main` with
+- **What a promotion PR may contain** (required checks, `app-image-promote-checks.yml`, run from `main` with
   `pull_request_target` so a PR can't change the check it's judged by):
   - **staging promotion only:** a PR from `promote/staging` or by a bot changes nothing but `sha256:`
     digests in `deploy/values-staging.yaml`;
@@ -129,7 +129,7 @@ know an image being promoted is one our pipeline built.
 - `merlion-bank-app` `cd.yml` (`promote to staging` job, attestations) and a merged
   `Promote merlion-bank-app <sha> to staging` PR with its approval.
 - `gh attestation verify` on a promoted digest (app README, "Image provenance").
-- `.github/workflows/promotion.yml`, `.github/scripts/check-promotion.py`; a promotion PR failing the
+- `.github/workflows/app-image-promote-checks.yml`, `.github/scripts/check-promotion.py`; a promotion PR failing the
   check (unsigned digest, or a change outside the digests); the ruleset screenshot (no bypass list).
 - `deploy/values-staging.yaml` and `deploy/values-prod.yaml` history.
 - A revert PR of a promotion passing its promotion check, and a hand-edited `values-prod.yaml`

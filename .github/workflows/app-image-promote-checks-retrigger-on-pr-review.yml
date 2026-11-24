@@ -1,12 +1,13 @@
-# Re-runs the "prod promotion only" check when a prod promotion PR gets a review, so its approval rule
-# (approved by someone other than whoever ran promote-prod) is re-evaluated. GitHub only re-runs
-# checks on pushes, not on reviews.
+# When: a review is submitted or dismissed on the prod promotion PR (promote/prod).
+# Why: the "prod promotion only" check (app-image-promote-checks.yml) passes only once someone other
+# than whoever ran app-image-promote-prod has approved. GitHub re-runs checks on pushes, not on
+# reviews, so without this the check would stay red after the approval that satisfies it.
 #
-# This workflow checks nothing itself and runs no code from the PR: a review event runs workflows from
-# the PR's branch, so a PR could change this file. All it does is ask GitHub to re-run the existing
-# promotion.yml run for the PR's head commit. A re-run of a pull_request_target run executes main's
-# code again, so the check that decides is always main's, whatever this file says.
-name: promotion-review
+# Why a separate workflow: a review event runs workflows from the PR's branch, so a PR could change
+# this file. So it checks nothing itself and runs no code from the PR; it only asks GitHub to re-run
+# the existing app-image-promote-checks.yml run for the PR's head commit. A re-run of a
+# pull_request_target run executes main's code again, so the check that decides is always main's.
+name: app-image-promote-checks-retrigger-on-pr-review
 
 on:
   pull_request_review:
@@ -26,7 +27,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/promotion.yml/runs?head_sha=$HEAD_SHA&event=pull_request_target&per_page=1" \
+          run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/app-image-promote-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request_target&per_page=1" \
             --jq '.workflow_runs[0].id // empty')"
           if [ -z "$run_id" ]; then
             echo "::warning::No promotion check run for $HEAD_SHA yet; it will see this review when it runs."
