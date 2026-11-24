@@ -28,8 +28,13 @@ data "aws_iam_policy_document" "record" {
   }
 }
 
-resource "aws_iam_role_policy" "record" {
-  name   = "deploy-records"
-  role   = aws_iam_role.ci["record"].id
-  policy = data.aws_iam_policy_document.record.json
+resource "aws_iam_policy" "record" {
+  name        = "${local.p}-ci-record-deploy-records"
+  description = "Add deploy records to the audit bucket, nothing else"
+  policy      = data.aws_iam_policy_document.record.json
+}
+
+resource "aws_iam_role_policy_attachment" "record" {
+  role       = aws_iam_role.ci["record"].name
+  policy_arn = aws_iam_policy.record.arn
 }

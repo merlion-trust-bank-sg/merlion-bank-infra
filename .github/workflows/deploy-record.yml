@@ -7,6 +7,8 @@
 #                                                    approvers, every image digest, app commit
 #   tf-apply finished with "apply prod" succeeded    a production terraform apply: PR, who approved
 #                                                    the production environment, the saved plan
+#   restore finished with "apply prod" succeeded     a prod repair after the nightly cleanup: the
+#                                                    same, plus the reason given
 #
 # Role g4-merlion-ci-record can only add objects under deploys/ (modules/iam-ci/record.tf): it can't
 # read, overwrite or delete anything. A failed run here doesn't undo the deploy; it shows the deploy
@@ -18,7 +20,7 @@ on:
     branches: [main]
     paths: ["deploy/values-*.yaml"]
   workflow_run:
-    workflows: [tf-apply]
+    workflows: [tf-apply, restore]
     types: [completed]
     branches: [main]
 
@@ -35,8 +37,8 @@ jobs:
   record:
     name: write deploy record
     runs-on: ubuntu-latest
-    # workflow_run fires for every tf-apply run; only one that applied prod needs a record (the script
-    # checks the job too)
+    # workflow_run fires for every tf-apply and restore run; only one that applied prod needs a
+    # record (the script checks the job too)
     if: github.event_name == 'push' || github.event.workflow_run.conclusion != 'cancelled'
     steps:
       # The pushed commit and the one before it, to see which values files changed
