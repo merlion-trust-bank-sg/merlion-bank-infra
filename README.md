@@ -292,12 +292,13 @@ volumes and ENIs, and `defaultTags` on the AWS Load Balancer Controller for ALBs
 their security groups. `Team = g4` also lets the CI roles tell our resources from other groups' in
 the shared account.
 
-**Staging teardown.** `.github/workflows/teardown.yml` destroys staging every day at 21:00 SGT, and
-on demand with **Run workflow**. It first stops Argo CD and removes the workload namespaces, so the
+**Staging teardown.** `.github/workflows/teardown.yml` destroys staging on demand with **Run
+workflow**. Its nightly schedule (21:00 SGT) has been disabled since 15 Nov, so staging stays up
+until someone runs it. It first stops Argo CD and removes the workload namespaces, so the
 LB Controller deletes its ALBs and the EBS CSI driver deletes the volumes, then runs
 `terraform destroy`. Bring staging back with **Run workflow** on `tf-apply` (apply staging, then
-Argo CD installs everything else). Running staging for working hours only costs about USD 90 a
-month instead of about USD 280 (DOC-05).
+Argo CD installs everything else). Running staging for working hours only costs about USD 116 a
+month instead of about USD 368 (DOC-05).
 
 **Budgets alert: not available.** The training account's learner policy explicitly denies AWS
 Budgets and Cost Explorer (`budgets:*`, `ce:*`), and billing is handled by the organisation's

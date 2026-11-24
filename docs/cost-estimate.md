@@ -8,7 +8,7 @@ Explorer aren't available in the training account (README, Cost controls).
 ## Summary
 | Scope | Monthly (USD) | Notes |
 |---|---:|---|
-| **Production** (when on) | **≈ 571** | Table 1. Off by default (`enabled = false` in `envs/prod`): USD 0 while torn down. ≈ 32 of it is the monitoring stack, which prod doesn't have yet |
+| **Production** (when on) | **≈ 571** | Table 1. Off by default (`enabled = false` in `envs/prod`): USD 0 while torn down. ≈ 32 of it is the monitoring stack (in prod since #65) |
 | **Shared** (state, audit trail, ECR) | **≈ 10** | Table 2, trail records write events only (ADR-004) |
 | **Staging** (≈ 220 h/month) | **≈ 116** | Table 3; ≈ 368 if left on 24/7 |
 | **Total** | **≈ 697** | ≈ 126 while prod is off |
@@ -40,8 +40,7 @@ Explorer aren't available in the training account (README, Cost controls).
 | **Total** | | | **≈ 571** |
 
 The monitoring rows (Prometheus and Loki volumes, Loki chunks, YACE and Grafana's ALB, ≈ 32 a month)
-apply once prod gets the same monitoring stack as staging; `deploy/platform/prod/` doesn't have it
-yet.
+are prod's copy of the staging monitoring stack, in `deploy/platform/prod/` since #65.
 
 ## 2. Shared (bootstrap layer, one per account)
 | Item | Sizing / assumption | Unit price | Monthly |
