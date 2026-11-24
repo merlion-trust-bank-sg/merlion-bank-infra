@@ -5,9 +5,9 @@ Usage:
   deploy-record.py app <commit sha> <before sha> <out dir>
       A push to main. Writes one record per environment whose deploy/values-<env>.yaml changed
       between <before sha> and <commit sha>: an application deploy (Argo CD syncs that commit).
-  deploy-record.py apply <tf-apply run id> <out dir>
-      A finished tf-apply run. Writes a record for prod if its "apply prod" job succeeded: a
-      production terraform apply, with who approved it.
+  deploy-record.py apply <tf-apply or restore run id> <out dir>
+      A finished tf-apply or restore run. Writes a record for prod if its "apply prod" job
+      succeeded: a production terraform apply (or restore, with its reason), with who approved it.
 
 Each record is one JSON file, {actor, approver, PR, commit SHA, image digests or plan, env,
 timestamp}, named <env>/<UTC time>-<kind>-<short sha>-<run id>-<attempt>.json under <out dir>. The
@@ -169,7 +169,7 @@ def apply_records(run_id, out_dir):
         sys.exit(f"Run {run_id}: apply prod succeeded but no production approval was found")
     sha = run["head_sha"]
     pr = pull_request(sha)
-    write(out_dir, {
+    record = {
         "schema": "merlion-deploy-record/v1",
         "kind": "infra-apply",
         "environment": "prod",
@@ -185,7 +185,13 @@ def apply_records(run_id, out_dir):
             "applied_at": applied[0]["completed_at"],
         },
         "pipeline": pipeline(),
-    })
+    }
+    # A restore (.github/workflows/restore.yml) re-applies main after the nightly cleanup; its run
+    # name is "restore <env>: <reason>"
+    if run["path"].endswith("/restore.yml"):
+        record["kind"] = "infra-restore"
+        record["reason"] = run.get("display_title", "")
+    write(out_dir, record)
 
 
 if __name__ == "__main__":

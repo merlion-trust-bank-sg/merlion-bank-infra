@@ -25,10 +25,17 @@ data "aws_iam_policy_document" "build" {
   }
 }
 
-resource "aws_iam_role_policy" "build" {
-  name   = "ecr-push"
-  role   = aws_iam_role.ci["build"].id
-  policy = data.aws_iam_policy_document.build.json
+# Managed, not inline: the nightly cleanup deletes inline policies but keeps managed ones, so the
+# restore role (restore.tf) only has to re-attach it
+resource "aws_iam_policy" "build" {
+  name        = "${local.p}-ci-build-ecr-push"
+  description = "Push images to merlion/* in ECR"
+  policy      = data.aws_iam_policy_document.build.json
+}
+
+resource "aws_iam_role_policy_attachment" "build" {
+  role       = aws_iam_role.ci["build"].name
+  policy_arn = aws_iam_policy.build.arn
 }
 
 # --- plan roles: read-only terraform plan, one environment each ----------------------------------
@@ -90,12 +97,19 @@ data "aws_iam_policy_document" "plan" {
   }
 }
 
-resource "aws_iam_role_policy" "plan" {
+resource "aws_iam_policy" "plan" {
   for_each = local.plan_roles
 
-  name   = each.value.policy_name
-  role   = aws_iam_role.ci[each.key].id
-  policy = data.aws_iam_policy_document.plan[each.key].json
+  name        = "${local.p}-ci-${each.value.policy_name}"
+  description = "Read-only plan of ${each.value.env}: its state, lock file and key"
+  policy      = data.aws_iam_policy_document.plan[each.key].json
+}
+
+resource "aws_iam_role_policy_attachment" "plan" {
+  for_each = local.plan_roles
+
+  role       = aws_iam_role.ci[each.key].name
+  policy_arn = aws_iam_policy.plan[each.key].arn
 }
 
 # These resources were written out once per role; the moves keep them in place (no AWS change)
@@ -109,12 +123,3 @@ moved {
   to   = aws_iam_role_policy_attachment.plan_read_only["prod_plan"]
 }
 
-moved {
-  from = aws_iam_role_policy.plan
-  to   = aws_iam_role_policy.plan["plan"]
-}
-
-moved {
-  from = aws_iam_role_policy.prod_plan
-  to   = aws_iam_role_policy.plan["prod_plan"]
-}

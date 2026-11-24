@@ -1,0 +1,257 @@
+# Restore after the training account's nightly cleanup, from the pipeline instead of a person's account.
+#
+# The cleanup keeps our roles and managed policies but detaches every policy from every role, so CI
+# fails with 403 and the env repairs below can't run. One manual step comes first, by an admin,
+# because the restore role is stripped too and nothing without permissions can give itself any:
+#
+#   aws iam attach-role-policy --role-name g4-merlion-ci-restore \
+#     --policy-arn arn:aws:iam::255945442255:policy/g4-merlion-ci-restore
+#
+# Then Run workflow (main) with the environment (the reason defaults to "nightly cleanup"):
+#
+#   ci-roles       no environment          g4-merlion-ci-restore    re-attaches the CI roles' policies
+#   staging        environment staging     g4-merlion-ci-staging    repairs staging (if it's up)
+#   plan prod      no environment          g4-merlion-ci-prod-plan  read-only; plan saved as artifact
+#   apply prod     environment production  g4-merlion-ci-prod       waits for approval, then repairs prod
+#
+# The restore role can only re-attach the policies listed in its own policy (modules/iam-ci/restore.tf).
+# The env jobs apply what's on main, like tf-apply, plus the repairs Terraform can't see: the EKS
+# cluster security group's rules, and a node group whose Auto Scaling group was deleted. A prod
+# restore needs the production approval, and deploy-record writes it to the audit bucket.
+name: restore
+run-name: "restore ${{ inputs.environment }}: ${{ inputs.reason }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to repair after the CI roles
+        type: choice
+        options: [staging, prod]
+        default: staging
+      reason:
+        description: Why, if not the usual (goes in the run name and the prod deploy record)
+        type: string
+        required: false
+        default: nightly cleanup
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  AWS_REGION: us-east-1
+
+jobs:
+  ci-roles:
+    name: restore CI roles
+    runs-on: ubuntu-latest
+    steps:
+      # The restore role only trusts main (ref:refs/heads/main); this says so before AWS refuses
+      - name: Only from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run this workflow from main, not ${GITHUB_REF_NAME}."
+          exit 1
+
+      - name: AWS login (restore role, OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::255945442255:role/g4-merlion-ci-restore
+          role-session-name: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: us-east-1
+
+      # The list of role => policies is the restore policy itself (one Restore<Role> statement per
+      # CI role), so this attaches exactly what the role is allowed to, and nothing else
+      - name: Re-attach the CI roles' policies
+        env:
+          POLICY_ARN: arn:aws:iam::255945442255:policy/g4-merlion-ci-restore
+        run: |
+          version="$(aws iam get-policy --policy-arn "$POLICY_ARN" --query Policy.DefaultVersionId --output text)"
+          aws iam get-policy-version --policy-arn "$POLICY_ARN" --version-id "$version" \
+            --query PolicyVersion.Document --output json > "$RUNNER_TEMP/restore-policy.json"
+          jq -r '.Statement[] | select((.Sid // "") | startswith("Restore"))
+            | ((.Resource | if type == "array" then .[] else . end) | split("/") | last) as $role
+            | .Condition.ArnEquals["iam:PolicyARN"] | if type == "array" then .[] else . end
+            | "\($role) \(.)"' "$RUNNER_TEMP/restore-policy.json" > "$RUNNER_TEMP/pairs"
+          [ -s "$RUNNER_TEMP/pairs" ] || { echo "::error::No Restore statements in $POLICY_ARN"; exit 1; }
+
+          restored=0
+          echo "### CI roles" >> "$GITHUB_STEP_SUMMARY"
+          while read -r role policy; do
+            if aws iam list-attached-role-policies --role-name "$role" \
+                --query 'AttachedPolicies[].PolicyArn' --output text | tr '\t' '\n' | grep -qxF "$policy"; then
+              echo "ok           $role  ${policy##*/}"
+            else
+              aws iam attach-role-policy --role-name "$role" --policy-arn "$policy"
+              echo "re-attached  $role  ${policy##*/}"
+              echo "- re-attached \`${policy##*/}\` to \`$role\`" >> "$GITHUB_STEP_SUMMARY"
+              restored=$((restored + 1))
+            fi
+          done < "$RUNNER_TEMP/pairs"
+          echo "$restored policies re-attached." | tee -a "$GITHUB_STEP_SUMMARY"
+          # IAM is eventually consistent: give the new attachments a moment before the next job uses them
+          [ "$restored" -eq 0 ] || sleep 20
+
+  staging:
+    name: restore staging
+    needs: ci-roles
+    if: inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: tf-staging # never at the same time as tf-apply or teardown
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: AWS login + Terraform init (staging, deploy role)
+        uses: ./.github/actions/terraform-env
+        with:
+          role: g4-merlion-ci-staging
+          workdir: envs/staging
+
+      - name: Check the cluster and node group
+        id: check
+        run: .github/scripts/restore-env.sh check staging
+
+      # Before the apply: a replaced node group's nodes need these rules to join
+      - name: Put back the cluster security group's rules
+        if: steps.check.outputs.exists == 'true'
+        run: .github/scripts/restore-env.sh sg staging
+
+      - name: Terraform plan (staging)
+        id: plan
+        if: steps.check.outputs.exists == 'true'
+        env:
+          REPLACE: ${{ steps.check.outputs.replace }}
+        run: .github/scripts/restore-env.sh plan staging
+
+      - name: Terraform apply (staging)
+        if: steps.plan.outputs.changes == 'true'
+        working-directory: envs/staging
+        run: terraform apply -lock-timeout=5m staging.tfplan
+
+      - name: Refresh secrets, restart the bank, health check
+        if: steps.check.outputs.exists == 'true'
+        env:
+          NODES_REPLACED: ${{ steps.check.outputs.nodes_replaced }}
+          JWT_ROTATED: ${{ steps.plan.outputs.jwt_rotated }}
+        run: .github/scripts/restore-env.sh after staging
+
+  plan-prod:
+    name: plan prod
+    needs: ci-roles
+    if: inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    # No environment on purpose, as in tf-apply: only the read-only ci-prod-plan role trusts this job.
+    # The approval happens once, on apply prod, with this plan in front of the reviewer.
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A restore puts back what's on main now, never an older commit
+      - name: Only the latest commit on main
+        run: |
+          git fetch --quiet origin main
+          latest="$(git rev-parse origin/main)"
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "::error::This run is for ${GITHUB_SHA::7} but main is now ${latest::7}. Start a new run on main instead."
+            exit 1
+          fi
+
+      - name: AWS login + Terraform init (prod, read-only role)
+        uses: ./.github/actions/terraform-env
+        with:
+          role: g4-merlion-ci-prod-plan
+          workdir: envs/prod
+
+      - name: Check the cluster and node group
+        id: check
+        run: .github/scripts/restore-env.sh check prod
+
+      - name: Terraform plan (prod)
+        id: plan
+        if: steps.check.outputs.exists == 'true'
+        env:
+          REPLACE: ${{ steps.check.outputs.replace }}
+        run: .github/scripts/restore-env.sh plan prod
+
+      # What apply prod applies, so the reviewer approves exactly what runs. Can hold sensitive
+      # values: short retention, never printed.
+      - name: Save prod plan for apply prod
+        uses: actions/upload-artifact@v7
+        if: steps.plan.outputs.changes == 'true'
+        with:
+          name: prod-tfplan-${{ github.sha }}
+          path: |
+            envs/prod/prod.tfplan
+            envs/prod/.terraform.lock.hcl
+          retention-days: 3
+          if-no-files-found: error
+
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+      changes: ${{ steps.plan.outputs.changes }}
+      nodes_replaced: ${{ steps.check.outputs.nodes_replaced }}
+      jwt_rotated: ${{ steps.plan.outputs.jwt_rotated }}
+
+  # Runs even when Terraform has nothing to change: the security group rules and the restart are
+  # changes to prod too, so they wait for the approval as well. Named as in tf-apply, so
+  # deploy-record writes a record for it.
+  apply-prod:
+    name: apply prod
+    needs: plan-prod
+    if: needs.plan-prod.outputs.exists == 'true'
+    runs-on: ubuntu-latest
+    environment: production # required reviewers: GitHub pauses here until someone approves
+    concurrency:
+      group: tf-prod
+      cancel-in-progress: false
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Still the latest commit on main
+        run: |
+          git fetch --quiet origin main
+          latest="$(git rev-parse origin/main)"
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "::error::main moved to ${latest::7} after this plan. Start a new restore run instead."
+            exit 1
+          fi
+
+      - name: Download the reviewed prod plan
+        if: needs.plan-prod.outputs.changes == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: prod-tfplan-${{ github.sha }}
+          path: envs/prod
+
+      - name: AWS login + Terraform init (prod, deploy role)
+        uses: ./.github/actions/terraform-env
+        with:
+          role: g4-merlion-ci-prod
+          workdir: envs/prod
+
+      - name: Put back the cluster security group's rules
+        run: .github/scripts/restore-env.sh sg prod
+
+      # If prod changed since the plan, Terraform rejects it as stale
+      - name: Terraform apply (prod, saved plan)
+        if: needs.plan-prod.outputs.changes == 'true'
+        working-directory: envs/prod
+        run: terraform apply -lock-timeout=5m prod.tfplan
+
+      - name: Refresh secrets, restart the bank, health check
+        env:
+          NODES_REPLACED: ${{ needs.plan-prod.outputs.nodes_replaced }}
+          JWT_ROTATED: ${{ needs.plan-prod.outputs.jwt_rotated }}
+        run: .github/scripts/restore-env.sh after prod
