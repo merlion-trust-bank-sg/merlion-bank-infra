@@ -5,7 +5,7 @@ image:
 
 services:
   frontend:
-    image: { digest: "sha256:39cbf8640c263e0ef3cb2a036d51267f74b2619705f62794f09a326ec2c1a0e9" }
+    image: { digest: "sha256:31b8f72035eced81e4eae8e01bc95f1b41b7e0f6056d95e78745006a0fc9ab66" }
   userservice:
     image: { digest: "sha256:a8b3465f7aed69d2940d4c15b42b07e66984e68b54f79cb25b8d80b44b795a60" }
   contacts:
@@ -19,7 +19,7 @@ services:
 
 dbInit:
   accounts: { image: { digest: "sha256:50efd29c7b6dff31e3dbb9a586134c05acc76cccf30f9f45d01f54ffc4fa2461" } }
-  ledger: { image: { digest: "sha256:7d5a483d4c3d96bb113fee8067be3945e412346fcc682baab455a74b4562f1ec" } }
+  ledger: { image: { digest: "sha256:62516fac3b60adf416b3e894e09963b0656d52dac679112a5e391292ac16b2e9" } }
 
 # Synthetic traffic in staging only
 loadgenerator:
