@@ -18,6 +18,11 @@ resource "aws_secretsmanager_secret" "jwt" {
   description             = "Bank of Anthos JWT signing key pair (PEM)"
   kms_key_id              = module.secretsmanager_key.arn
   recovery_window_in_days = 0 # environments are rebuilt daily; a deleted secret must not block the name
+
+  # Metadata only, to demo the infra pipeline (plan → apply) with one harmless in-place change
+  tags = {
+    PipelineDemo = "2026-11-26"
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "jwt" {
