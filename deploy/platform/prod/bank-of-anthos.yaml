@@ -51,6 +51,12 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+        # The LB Controller then adds a readiness gate to pods behind the ALB: a new pod counts as Ready
+        # only once its ALB target is healthy, so a rollout never removes old pods before the ALB will
+        # send traffic to the new ones
+        managedNamespaceMetadata:
+          labels:
+            elbv2.k8s.aws/pod-readiness-gate-inject: enabled
         retry:
           # The first sync can run before the ExternalSecrets have filled in the Secrets
           limit: 10

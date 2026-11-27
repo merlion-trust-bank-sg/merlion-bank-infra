@@ -40,14 +40,29 @@ spec:
     spec:
       serviceAccountName: bank-of-anthos
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 5
+      # Room for the preStop pause below plus a clean shutdown
+      terminationGracePeriodSeconds: 30
       {{- include "boa.podSecurity" $ | nindent 6 }}
       {{- if gt (int (include "boa.minReplicas" $svc)) 1 }}
-      # Spread replicas over both AZs, so losing one AZ leaves the service up
+      # Spread replicas over both AZs, so losing one AZ leaves the service up. A preference alone wasn't
+      # enough: both copies of most services ended up on one node in one AZ.
+      # matchLabelKeys: count only pods of the same rollout. Without it, the old ReplicaSet's pods
+      # (about to be deleted) count too, and the new pods can all land in one AZ.
       topologySpreadConstraints:
+        # Required: if an AZ has no room, the pod waits (Pending) and a rollout pauses with the old
+        # pods still serving, rather than putting both copies in one AZ
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          matchLabelKeys: [pod-template-hash]
+          labelSelector:
+            matchLabels:
+              app: {{ $name }}
+        # Preferred: different nodes as well. Not required, as nodes run out of pod slots (17 per t3.medium)
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
+          matchLabelKeys: [pod-template-hash]
           labelSelector:
             matchLabels:
               app: {{ $name }}
@@ -59,6 +74,14 @@ spec:
           ports:
             - name: http
               containerPort: {{ $svc.port }}
+          # A deleted pod gets SIGTERM at the same moment it's taken out of the ALB target group and the
+          # Service endpoints, and both take a few seconds to stop sending it requests. Keep serving
+          # until they have, so no request lands on a pod that has already exited (502s on every
+          # rollout and scale-down). Built-in sleep action: the Java images have no shell or sleep binary.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 15
           env:
             - name: VERSION
               value: {{ $.Values.bank.version | quote }}
